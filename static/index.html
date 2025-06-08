@@ -1,0 +1,33 @@
+<!doctype html><html><head>
+    <meta charset="utf-8">
+    <link  rel="stylesheet"
+       href="https://cdnjs.cloudflare.com/ajax/libs/chessboard-js/1.0.0/chessboard-1.0.0.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.6.4/jquery.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/chessboard-js/1.0.0/chessboard-1.0.0.min.js"></script>
+
+    </head><body>
+    <video id="cam" autoplay muted playsinline width="640"></video>
+    <div id="board" style="width: 400px"></div>
+    <script>
+    const board = Chessboard('board', 'start');
+    let ws;
+    navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}})
+      .then(stream => {
+          document.getElementById('cam').srcObject = stream;
+          ws = new WebSocket('ws://localhost:8000/ws');
+          ws.onmessage = ({data}) => {
+              const {move, fen} = JSON.parse(data);
+              if (move) board.move(move);         // animates piece
+          };
+          const track = stream.getVideoTracks()[0];
+          const cap = new ImageCapture(track);
+          setInterval(async ()=>{
+              const bitmap = await cap.grabFrame();
+              const blob   = await new Promise(r=>bitmap.convertToBlob().then(r));
+              const reader = new FileReader();
+              reader.onload = ()=>ws.send(reader.result);
+              reader.readAsDataURL(blob);         // base64
+          }, 1000);   // 1 fps is enough
+    });
+    </script></body></html>
+    
