@@ -1,33 +1,135 @@
-<!doctype html><html><head>
-    <meta charset="utf-8">
-    <link  rel="stylesheet"
-       href="https://cdnjs.cloudflare.com/ajax/libs/chessboard-js/1.0.0/chessboard-1.0.0.min.css">
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.6.4/jquery.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/chessboard-js/1.0.0/chessboard-1.0.0.min.js"></script>
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
 
-    </head><body>
-    <video id="cam" autoplay muted playsinline width="640"></video>
-    <div id="board" style="width: 400px"></div>
-    <script>
-    const board = Chessboard('board', 'start');
-    let ws;
-    navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}})
-      .then(stream => {
-          document.getElementById('cam').srcObject = stream;
-          ws = new WebSocket('ws://localhost:8000/ws');
-          ws.onmessage = ({data}) => {
-              const {move, fen} = JSON.parse(data);
-              if (move) board.move(move);         // animates piece
-          };
-          const track = stream.getVideoTracks()[0];
-          const cap = new ImageCapture(track);
-          setInterval(async ()=>{
-              const bitmap = await cap.grabFrame();
-              const blob   = await new Promise(r=>bitmap.convertToBlob().then(r));
-              const reader = new FileReader();
-              reader.onload = ()=>ws.send(reader.result);
-              reader.readAsDataURL(blob);         // base64
-          }, 1000);   // 1 fps is enough
+  <!--  chessboard.js + deps  -->
+  <link rel="stylesheet"
+        href="https://cdnjs.cloudflare.com/ajax/libs/chessboard-js/1.0.0/chessboard-1.0.0.min.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.6.4/jquery.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/chessboard-js/1.0.0/chessboard-1.0.0.min.js"></script>
+
+  <style>
+    body  {font-family:sans-serif;margin:0;display:flex;flex-direction:column;align-items:center}
+    #board{width:400px;margin-top:12px}
+    #status{margin-top:8px;color:#444}
+    #cam  {display:block}               /* set to block if you want a preview */
+  </style>
+</head>
+
+<body>
+  <h2>Phone Chess Tracker (PoC)</h2>
+  <video id="cam" autoplay muted playsinline></video>
+  <div id="board"></div>
+  <div id="status">Waiting for camera …</div>
+
+  <script>
+  /* -------------------- helpers -------------------- */
+  const statusEl = document.getElementById('status');
+  const videoEl  = document.getElementById('cam');
+
+  function wsURL () {
+    const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+    return `${proto}://${location.host}/ws`;
+  }
+  function blobToB64 (blob) {
+    return new Promise(r => {
+      const fr = new FileReader();
+      fr.onload = () => r(fr.result);
+      fr.readAsDataURL(blob);
     });
-    </script></body></html>
-    
+  }
+
+  /* -------- fallback-friendly frame capture ---------- */
+  async function grabFrame (videoTrack, canvas) {
+    // First choice: ImageCapture.grabFrame (fast, Chrome / Edge)
+    if ('ImageCapture' in window) {
+      try {
+        const cap = new ImageCapture(videoTrack);
+        if (cap.grabFrame) return cap.grabFrame();  // ImageBitmap
+      } catch { /* fall through to canvas */ }
+    }
+    // Fallback: draw current <video> frame to off-screen canvas
+    canvas   = canvas || (grabFrame._c   ||= document.createElement('canvas'));
+    const ctx = canvas.getContext('2d');
+    canvas.width  = videoEl.videoWidth  || 640;
+    canvas.height = videoEl.videoHeight || 480;
+    ctx.drawImage(videoEl, 0, 0, canvas.width, canvas.height);
+    return new Promise(r => canvas.toBlob(r, 'image/jpeg', 0.8)); // returns Blob
+  }
+  async function frameToBlob (frame) {
+    if (frame instanceof Blob) return frame;        // came from canvas path
+    if (frame.convertToBlob)      return frame.convertToBlob(); // ImageBitmap
+    // Older browsers: draw to temp canvas again
+    const c = document.createElement('canvas');
+    c.width = frame.width; c.height = frame.height;
+    c.getContext('2d').drawImage(frame,0,0);
+    return new Promise(r => c.toBlob(r,'image/jpeg',0.8));
+  }
+
+  /* ------------------- chessboard.js ---------------- */
+  const board = Chessboard('board', {
+    position   : 'start',
+    draggable  : false,
+    pieceTheme : 'https://cdnjs.cloudflare.com/ajax/libs/chessboard-js/1.0.0/img/chesspieces/wikipedia/{piece}.png'
+  });
+
+  /* -------------------- main flow ------------------- */
+  let ws, stream, frameTimer;
+
+  (async function init () {
+    try {
+      /* camera ----------------------------------------------------------- */
+      stream = await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}});
+      videoEl.srcObject = stream;
+
+      await new Promise(res => {
+        if (videoEl.readyState >= 2) return res();        // HAVE_CURRENT_DATA
+        videoEl.onloadeddata = res;                       // fires when first frame arrives
+        });
+
+      const track = stream.getVideoTracks()[0];
+
+      /* calibration ------------------------------------------------------ */
+      statusEl.textContent = 'Calibrating board …';
+      const firstFrame = await grabFrame(track);
+      const firstBlob  = await frameToBlob(firstFrame);
+      const firstB64   = await blobToB64(firstBlob);
+
+      const res = await fetch('/calibrate', {method:'POST', body:firstB64});
+      if (!res.ok) {
+        statusEl.textContent = 'Calibration failed – show the whole board & retry';
+        return;
+      }
+
+      /* websocket -------------------------------------------------------- */
+      ws = new WebSocket(wsURL());
+      ws.onopen    = () => statusEl.textContent = 'Connected – tracking moves.';
+      ws.onclose   = () => statusEl.textContent = 'WebSocket closed';
+      ws.onerror   = e  => console.error('WS error', e);
+      ws.onmessage = ({data}) => {
+        const msg = JSON.parse(data);
+        if (msg.move) board.move(msg.move);        // animate move
+        if (msg.err)  statusEl.textContent = msg.err;
+      };
+
+      /* loop ------------------------------------------------------------- */
+      frameTimer = setInterval(async () => {
+        if (ws.readyState !== 1) return;           // skip unless OPEN
+        try {
+          const fr   = await grabFrame(track);
+          const blob = await frameToBlob(fr);
+          const b64  = await blobToB64(blob);
+          ws.send(b64);
+        } catch (e) {
+          console.error('frame error', e);
+        }
+      }, 1000);                                    // 1 FPS (adjust to taste)
+    } catch (err) {
+      console.error(err);
+      statusEl.textContent = 'Camera access failed: ' + err.message;
+    }
+  })();
+  </script>
+</body>
+</html>

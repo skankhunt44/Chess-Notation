@@ -1,41 +1,97 @@
-from fastapi import FastAPI, WebSocket
-import base64, cv2, numpy as np
-from vision import find_board, warp_board, occupancy_hsv
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Body
+import base64
+import cv2 as cv
+import numpy as np
+
+from vision import find_board, warp_board, occupancy_hsv, draw_board_overlay
 from tracker import SquareTracker
 
-app      = FastAPI()
-tracker  = SquareTracker()
-H        = None                   # homography
+from fastapi.staticfiles import StaticFiles
 
-@app.post("/calibrate/")
-async def calibrate(image_b64: str):
-    frame = decode(image_b64)
+
+app = FastAPI()
+# move to the end of the file
+# app.mount("/", StaticFiles(directory="static", html=True), name="static")
+
+tracker = SquareTracker()
+
+# Will hold the calibrated 4×2 corner array after /calibrate runs.
+_corners: np.ndarray | None = None
+
+# ---------------------------------------------------------------------------
+# Utility – base64‑>numpy image
+# ---------------------------------------------------------------------------
+
+def _decode_image(data_url: str) -> np.ndarray:
+    """Decode a data‑URL or raw base64 string to a BGR (OpenCV) image."""
+    if "," in data_url:  # strip leading "data:image/jpeg;base64," etc.
+        data_url = data_url.split(",", 1)[1]
+    buf = base64.b64decode(data_url)
+    arr = np.frombuffer(buf, dtype=np.uint8)
+    img = cv.imdecode(arr, cv.IMREAD_COLOR)
+    if img is None:
+        raise ValueError("Could not decode image")
+    return img
+
+# ---------------------------------------------------------------------------
+# HTTP endpoint – one‑shot board calibration
+# ---------------------------------------------------------------------------
+
+# @app.post("/calibrate")
+# async def calibrate(image_b64: str = Body(..., media_type="text/plain")):
+#     global _corners
+#     frame = _decode_image(image_b64)
+#     corners = find_board(frame)
+#     if corners is None:
+#         raise HTTPException(status_code=400, detail="Board not found – make sure the entire board is visible and try again.")
+#     _corners = corners
+#     return {"ok": True}
+
+@app.post("/calibrate")
+async def calibrate(image_b64: str = Body(..., media_type="text/plain")):
+    global _corners
+    frame = _decode_image(image_b64)
     corners = find_board(frame)
-    global H
-    H = corners
+    if corners is None:
+        dbg = draw_board_overlay(frame, corners)
+        cv.imwrite("calib_fail.jpg", dbg)
+        raise HTTPException(400, "Board not found")
+    dbg = draw_board_overlay(frame, corners)
+    cv.imwrite("calib_fail.jpg", dbg)
+    _corners = corners
     return {"ok": True}
+
+# ---------------------------------------------------------------------------
+# WebSocket – streaming frames → moves / FEN
+# ---------------------------------------------------------------------------
 
 @app.websocket("/ws")
 async def ws_endpoint(ws: WebSocket):
     await ws.accept()
-    while True:
-        data = await ws.receive_text()
-        frame = decode(data)
+    try:
+        while True:
+            data = await ws.receive_text()
+            try:
+                frame = _decode_image(data)
+            except ValueError:
+                await ws.send_json({"err": "Bad image data"})
+                continue
 
-        if H is None:
-            await ws.send_json({"err": "Not calibrated"})
-            continue
+            if _corners is None:
+                await ws.send_json({"err": "Not calibrated"})
+                continue
 
-        board_img = warp_board(frame, H)[0]
-        occ = occupancy_hsv(board_img)
-        move, fen = tracker.update(occ)
+            board_img, _ = warp_board(frame, _corners)
+            occ = occupancy_hsv(board_img)
+            move, fen = tracker.update(occ)
 
-        if move:
-            await ws.send_json({"move": move, "fen": fen})
-        else:
-            await ws.send_json({"noop": True})
+            if move:
+                await ws.send_json({"move": move, "fen": fen})
+            else:
+                await ws.send_json({"noop": True})
+    except WebSocketDisconnect:
+        # Normal disconnect; nothing special to clean up for now.
+        pass
 
-def decode(b64):
-    buf = base64.b64decode(b64.split(",")[-1])
-    img = np.frombuffer(buf, np.uint8)
-    return cv2.imdecode(img, cv2.IMREAD_COLOR)
+
+app.mount("/", StaticFiles(directory="static", html=True), name="static")
