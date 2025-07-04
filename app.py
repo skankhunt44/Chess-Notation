@@ -62,6 +62,15 @@ async def calibrate(image_b64: str = Body(..., media_type="text/plain")):
     return {"ok": True}
 
 # ---------------------------------------------------------------------------
+# HTTP endpoint – current move history
+# ---------------------------------------------------------------------------
+
+@app.get("/history")
+async def get_history():
+    """Return the list of moves seen so far in SAN."""
+    return {"moves": tracker.get_history()}
+
+# ---------------------------------------------------------------------------
 # WebSocket – streaming frames → moves / FEN
 # ---------------------------------------------------------------------------
 
@@ -86,7 +95,7 @@ async def ws_endpoint(ws: WebSocket):
             move, fen = tracker.update(occ)
 
             if move:
-                await ws.send_json({"move": move, "fen": fen})
+                await ws.send_json({"move": move, "fen": fen, "history": tracker.get_history()})
             else:
                 await ws.send_json({"noop": True})
     except WebSocketDisconnect:
