@@ -39,6 +39,7 @@ class SquareTracker:
     def __init__(self, fen: str | None = None):
         self.board: chess.Board = chess.Board(fen) if fen else chess.Board()
         self.prev: np.ndarray = _board_to_occ(self.board)
+        self.history: list[str] = []
 
     # ---------------------------------------------------------------------
     # Public helpers
@@ -47,6 +48,11 @@ class SquareTracker:
         """Set a fresh game state and sync the occupancy baseline."""
         self.board.set_fen(fen) if fen else self.board.reset()
         self.prev = _board_to_occ(self.board)
+        self.history.clear()
+
+    def get_history(self) -> list[str]:
+        """Return the SAN history of all recognised moves."""
+        return self.history.copy()
 
     # ---------------------------------------------------------------------
     # Core – consume a new 8 × 8 occupancy matrix
@@ -89,8 +95,9 @@ class SquareTracker:
             return None, None
 
         # Push the single matching move.
-        san_before = self.board.san(candidate)  # for UI if needed
+        san_before = self.board.san(candidate)  # SAN before pushing
         self.board.push(candidate)
+        self.history.append(san_before)
         self.prev = new_occ.copy()
         return candidate.uci(), self.board.fen()
 

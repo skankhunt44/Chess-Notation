@@ -14,6 +14,7 @@
     #board{width:400px;margin-top:12px}
     #status{margin-top:8px;color:#444}
     #cam  {display:block}               /* set to block if you want a preview */
+    #history{white-space:pre-wrap;margin-top:8px}
   </style>
 </head>
 
@@ -22,11 +23,13 @@
   <video id="cam" autoplay muted playsinline></video>
   <div id="board"></div>
   <div id="status">Waiting for camera …</div>
+  <pre id="history"></pre>
 
   <script>
   /* -------------------- helpers -------------------- */
   const statusEl = document.getElementById('status');
   const videoEl  = document.getElementById('cam');
+  const historyEl = document.getElementById('history');
 
   function wsURL () {
     const proto = location.protocol === 'https:' ? 'wss' : 'ws';
@@ -110,6 +113,7 @@
       ws.onmessage = ({data}) => {
         const msg = JSON.parse(data);
         if (msg.move) board.move(msg.move);        // animate move
+        if (msg.history) historyEl.textContent = msg.history.join(' ');
         if (msg.err)  statusEl.textContent = msg.err;
       };
 
