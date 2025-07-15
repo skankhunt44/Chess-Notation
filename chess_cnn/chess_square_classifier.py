@@ -53,6 +53,8 @@ from torch.utils.data import DataLoader, Dataset, random_split
 from torchvision import models, transforms
 from tqdm import tqdm
 
+import matplotlib.pyplot as plt
+
 ###############################################
 # ----- 1.  Utility functions  -------------- #
 ###############################################

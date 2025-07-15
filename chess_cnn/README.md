@@ -3,6 +3,7 @@
 python -m venv venv
 source venv/bin/activate  # .\venv\Scripts\activate on Windows
 pip install torch torchvision opencv-python tqdm
+pip install matplotlib
 
 ## Train
 
