@@ -1,1 +1,5 @@
+# local data and models – don’t track in Git
+data/
+chess_pieces/
 venv/
+data_inaccurate/
