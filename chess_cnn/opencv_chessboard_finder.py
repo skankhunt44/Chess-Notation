@@ -126,10 +126,10 @@ def main():
     
     # frame_ideal = np.float32([[0, 0], [cols, 0], [cols, rows], [0, rows]])
     frame_ideal = np.float32([
-    [-0.5,        -0.5],           # TL
-    [cols - 0.5,  -0.5],           # TR
-    [cols - 0.5,  rows - 0.5],     # BR
-    [-0.5,        rows - 0.5],     # BL
+    [-1,        -1],           # TL
+    [cols,  -1],           # TR
+    [cols,  rows],     # BR
+    [-1,        rows],     # BL
     ])
 
     frame_px    = cv2.perspectiveTransform(frame_ideal[None, ...], H)[0]
@@ -147,7 +147,7 @@ def main():
         import matplotlib.pyplot as plt
         plt.figure(figsize=(6, 6))
         plt.imshow(vis)
-        plt.title("Inner (green) & outer frame (TL red, TR green, BR blue, BL yellow)")
+        plt.title("Inner (green) & outer frame (TL blue, TR green, BR red, BL yellow)")
         plt.axis("off")
         plt.tight_layout(); plt.show()
 
