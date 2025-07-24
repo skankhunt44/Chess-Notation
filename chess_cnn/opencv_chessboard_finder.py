@@ -30,10 +30,7 @@ import argparse
 from pathlib import Path
 
 import cv2
-import matplotlib.pyplot as plt
 import numpy as np
-
-import matplotlib.colors as mcolors
 
 
 def detect_corners(img_bgr: np.ndarray, rows: int, cols: int):
@@ -79,12 +76,27 @@ def outer_corners_from_inner(pts, rows=7, cols=7):
     return np.stack([tl, tr, br, bl])
 
 def overlay(img: np.ndarray, pts: np.ndarray, colours=None):
+    """Return *img* with small circles drawn at ``pts``.
+
+    Colour names are supported if :mod:`matplotlib` is available; otherwise any
+    string colours fall back to the default BGR tuple.
+    """
     out = img.copy()
     if colours is None:
         colours = [(0, 255, 0)] * len(pts)           # default green
+
+    try:
+        import matplotlib.colors as mcolors  # type: ignore
+    except Exception:
+        mcolors = None
+
     for (x, y), col in zip(pts, colours):
-        if isinstance(col, str):                     # matplotlib colour names
-            col = tuple(int(c * 255) for c in mcolors.to_rgb(col))[::-1]  # to BGR
+        if isinstance(col, str):
+            if mcolors is not None:
+                col = tuple(int(c * 255) for c in mcolors.to_rgb(col))[::-1]
+            else:
+                # matplotlib unavailable – fall back to default colour
+                col = (0, 255, 0)
         cv2.circle(out, (int(x), int(y)), 4, col, -1)
     return out
 
