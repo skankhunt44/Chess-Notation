@@ -47,7 +47,12 @@ def _snap_points(pts: Iterable[Tuple[float, float]], bin_sz: int = 20) -> np.nda
 # ---------------------------------------------------------------------------
 
 def detect_board_corners(img_bgr: np.ndarray, rows: int = 7, cols: int = 7) -> np.ndarray | None:
-    """Return TL, TR, BR, BL board corners using line intersections."""
+    """Return TL, TR, BR, BL board corners using line intersections.
+
+    Intersections are snapped to the nearest grid points then sorted
+    top-to-bottom and left-to-right.  At most ``rows * cols`` points are
+    matched against an ideal grid before estimating the homography.
+    """
     gray = cv.cvtColor(img_bgr, cv.COLOR_BGR2GRAY)
     blur = cv.GaussianBlur(gray, (5, 5), 0)
     edges = cv.Canny(blur, 50, 150, apertureSize=3)
@@ -82,8 +87,12 @@ def detect_board_corners(img_bgr: np.ndarray, rows: int = 7, cols: int = 7) -> n
     if len(inters) < 4:
         return None
 
+    n = min(len(inters), rows * cols)
+    inters = inters[np.lexsort((inters[:, 0], inters[:, 1]))][:n]
+
     ideal = np.array([[c, r] for r in range(rows) for c in range(cols)], np.float32)
-    ideal = ideal[: len(inters)]
+    ideal = ideal[:n]
+
     H, _ = cv.findHomography(ideal, inters, cv.RANSAC, 5.0)
     if H is None:
         return None
