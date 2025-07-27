@@ -3,7 +3,7 @@ import base64
 import cv2 as cv
 import numpy as np
 
-from vision import find_board, warp_board, occupancy_hsv, draw_board_overlay
+from vision import find_board, warp_board, occupancy_cnn, draw_board_overlay
 from tracker import SquareTracker
 
 from fastapi.staticfiles import StaticFiles
@@ -91,7 +91,7 @@ async def ws_endpoint(ws: WebSocket):
                 continue
 
             board_img, _ = warp_board(frame, _corners)
-            occ = occupancy_hsv(board_img)
+            occ = occupancy_cnn(board_img)
             move, fen = tracker.update(occ)
 
             if move:
