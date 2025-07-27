@@ -3,4 +3,5 @@ uvicorn[standard]
 opencv-python
 numpy
 python-chess
-tensorflow==2.16.1        # or torch / tflite
+torch
+torchvision

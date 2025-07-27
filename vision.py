@@ -2,6 +2,14 @@ import cv2 as cv
 import numpy as np
 from typing import Tuple, Optional
 
+from chess_cnn.opencv_chessboard_finder import (
+    detect_corners,
+    outer_corners_from_inner,
+)
+import torch
+import torch.nn as nn
+from torchvision import models, transforms
+
 """vision.py – camera‑side utilities
 -------------------------------------
 •  Calibrate the chessboard once per session (detect 4 corners)
@@ -16,7 +24,7 @@ classifier trained on 64 × 64 crops – the public API remains identical.
 # ---------------------------------------------------------------------------
 # Constants & tunables
 # ---------------------------------------------------------------------------
-CALIB_SIZE = 800                 # output board width/height in px
+CALIB_SIZE = 800                 # output board width/height in px
 
 # HSV thresholds – tweak for your lighting & pieces; mask ∈ [0, 255]
 WHITE_LOWER = (0, 0, 170)
@@ -26,6 +34,9 @@ BLACK_UPPER = (180, 255, 70)
 
 # Morphology kernel for noise suppression
 _KERNEL = cv.getStructuringElement(cv.MORPH_ELLIPSE, (3, 3))
+
+# Lazy loaded CNN model
+_CNN_MODEL = None
 
 
 # ---------------------------------------------------------------------------
@@ -38,29 +49,13 @@ def find_board(frame: np.ndarray) -> Optional[np.ndarray]:
     The corners are **ordered TL, TR, BR, BL** (clockwise, starting top‑left)
     and expressed in the *input‑frame* coordinate space.
     """
-    gray = cv.cvtColor(frame, cv.COLOR_BGR2GRAY)
+    try:
+        inner = detect_corners(frame, rows=7, cols=7)
+    except Exception:
+        return None
 
-    # 1. Edge map
-    edges = cv.Canny(gray, 50, 150, apertureSize=3)
-
-    # 2. Probabilistic Hough – find candidate long lines (board border)
-    lines = cv.HoughLinesP(edges, 1, np.pi / 180, threshold=150,
-                           minLineLength=0.5 * min(frame.shape[:2]),
-                           maxLineGap=20)
-    if lines is None or len(lines) < 4:
-        return None  # not enough structure
-
-    # 3. Gather all endpoints; fit a minimum‑area rectangle around them
-    pts = np.concatenate([[l[0][:2], l[0][2:]] for l in lines])
-    rect = cv.minAreaRect(pts)          # ((cx, cy), (w, h), angle)
-    box  = cv.boxPoints(rect)           # 4 × 2 float32
-
-    # 4. Ensure top‑left is first, then clockwise order
-    box = sorted(box, key=lambda p: (p[1], p[0]))        # sort by y, then x
-    tl, tr = sorted(box[:2], key=lambda p: p[0])          # leftmost of top two
-    bl, br = sorted(box[2:], key=lambda p: p[0])
-    ordered = np.array([tl, tr, br, bl], dtype=np.float32)
-    return ordered
+    corners = outer_corners_from_inner(inner, rows=7, cols=7)
+    return corners.astype(np.float32)
 
 
 def warp_board(frame: np.ndarray, corners: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
@@ -77,11 +72,10 @@ def warp_board(frame: np.ndarray, corners: np.ndarray) -> Tuple[np.ndarray, np.n
         *img* – warped board (CALIB_SIZE × CALIB_SIZE × 3, BGR)
         *M*   – 3 × 3 homography matrix (frame → board)
     """
-    dst = np.array([[0, 0], [CALIB_SIZE, 0],
-                    [CALIB_SIZE, CALIB_SIZE], [0, CALIB_SIZE]], dtype=np.float32)
-    M = cv.getPerspectiveTransform(corners, dst)
-    board_img = cv.warpPerspective(frame, M, (CALIB_SIZE, CALIB_SIZE))
-    return board_img, M
+    dst = np.array([[0, 0], [CALIB_SIZE, 0], [CALIB_SIZE, CALIB_SIZE], [0, CALIB_SIZE]], dtype=np.float32)
+    H, _ = cv.findHomography(corners.astype(np.float32), dst)
+    board_img = cv.warpPerspective(frame, H, (CALIB_SIZE, CALIB_SIZE))
+    return board_img, H
 
 
 # ---------------------------------------------------------------------------
@@ -113,6 +107,52 @@ def occupancy_hsv(board_img: np.ndarray) -> np.ndarray:
                 occ[r, c] = 1
             elif roi_b.mean() > 30:
                 occ[r, c] = 2
+    return occ
+
+
+def _load_cnn_model(device=None) -> nn.Module:
+    """Lazy-load the CNN piece classifier."""
+    global _CNN_MODEL
+    if '_CNN_MODEL' in globals() and _CNN_MODEL is not None:
+        return _CNN_MODEL
+
+    device = device or ('cuda' if torch.cuda.is_available() else 'cpu')
+
+    def build_model(num_classes: int = 3) -> nn.Module:
+        m = models.mobilenet_v2(weights=models.MobileNet_V2_Weights.IMAGENET1K_V1)
+        m.classifier[1] = nn.Linear(m.classifier[1].in_features, num_classes)
+        return m
+
+    model = build_model()
+    state = torch.load('assets/model.pt', map_location=device)
+    model.load_state_dict(state)
+    model.to(device)
+    model.eval()
+    _CNN_MODEL = model
+    return model
+
+
+_TRANSFORM = transforms.Compose([
+    transforms.ToTensor(),
+    transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),
+])
+
+
+def occupancy_cnn(board_img: np.ndarray) -> np.ndarray:
+    """Return occupancy matrix using the trained CNN classifier."""
+    device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    model = _load_cnn_model(device)
+    sq = CALIB_SIZE // 8
+    occ = np.zeros((8, 8), np.int8)
+    with torch.no_grad():
+        for r in range(8):
+            for c in range(8):
+                crop = board_img[r * sq:(r + 1) * sq, c * sq:(c + 1) * sq]
+                crop = cv.resize(crop, (64, 64))
+                crop = cv.cvtColor(crop, cv.COLOR_BGR2RGB)
+                inp = _TRANSFORM(crop).unsqueeze(0).to(device)
+                pred = model(inp).argmax(1).item()
+                occ[r, c] = pred
     return occ
 
 
