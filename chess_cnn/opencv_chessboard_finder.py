@@ -33,7 +33,7 @@ import cv2
 import numpy as np
 
 
-def detect_corners(img_bgr: np.ndarray, rows: int, cols: int):
+def detect_corners(img_bgr: np.ndarray, rows: int, cols: int): 
     gray = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY)
 
     # try the modern detector first
