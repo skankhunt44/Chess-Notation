@@ -21,6 +21,7 @@
 <body>
   <h2>Phone Chess Tracker (PoC)</h2>
   <video id="cam" autoplay muted playsinline></video>
+  <button id="calib">Calibrate board</button>
   <div id="board"></div>
   <div id="status">Waiting for camera …</div>
   <pre id="history"></pre>
@@ -30,6 +31,7 @@
   const statusEl = document.getElementById('status');
   const videoEl  = document.getElementById('cam');
   const historyEl = document.getElementById('history');
+  const calibBtn  = document.getElementById('calib');
 
   function wsURL () {
     const proto = location.protocol === 'https:' ? 'wss' : 'ws';
@@ -78,7 +80,54 @@
   });
 
   /* -------------------- main flow ------------------- */
-  let ws, stream, frameTimer;
+  let ws, stream, track, frameTimer, step = 0;
+
+  async function startWS () {
+    ws = new WebSocket(wsURL());
+    ws.onopen    = () => statusEl.textContent = 'Connected – tracking moves.';
+    ws.onclose   = () => statusEl.textContent = 'WebSocket closed';
+    ws.onerror   = e  => console.error('WS error', e);
+    ws.onmessage = ({data}) => {
+      const msg = JSON.parse(data);
+      if (msg.move) board.move(msg.move);        // animate move
+      if (msg.history) historyEl.textContent = msg.history.join(' ');
+      if (msg.err)  statusEl.textContent = msg.err;
+    };
+
+    frameTimer = setInterval(async () => {
+      if (ws.readyState !== 1) return;           // skip unless OPEN
+      try {
+        const fr   = await grabFrame(track);
+        const blob = await frameToBlob(fr);
+        const b64  = await blobToB64(blob);
+        ws.send(b64);
+      } catch (e) {
+        console.error('frame error', e);
+      }
+    }, 1000);                                    // 1 FPS (adjust to taste)
+  }
+
+  async function calibrate () {
+    const fr   = await grabFrame(track);
+    const blob = await frameToBlob(fr);
+    const b64  = await blobToB64(blob);
+    if (step === 0) {
+      statusEl.textContent = 'Calibrating…';
+      const res = await fetch('/calibrate', {method:'POST', body:b64});
+      if (!res.ok) {
+        statusEl.textContent = 'Calibration failed – show the whole board & retry';
+        return;
+      }
+      step = 1;
+      statusEl.textContent = 'Corners found. Set up the board and press again.';
+      calibBtn.textContent = 'Start tracking';
+    } else {
+      calibBtn.disabled = true;
+      startWS();
+    }
+  }
+
+  calibBtn.addEventListener('click', calibrate);
 
   (async function init () {
     try {
@@ -89,46 +138,11 @@
       await new Promise(res => {
         if (videoEl.readyState >= 2) return res();        // HAVE_CURRENT_DATA
         videoEl.onloadeddata = res;                       // fires when first frame arrives
-        });
+      });
 
-      const track = stream.getVideoTracks()[0];
-
-      /* calibration ------------------------------------------------------ */
-      statusEl.textContent = 'Calibrating board …';
-      const firstFrame = await grabFrame(track);
-      const firstBlob  = await frameToBlob(firstFrame);
-      const firstB64   = await blobToB64(firstBlob);
-
-      const res = await fetch('/calibrate', {method:'POST', body:firstB64});
-      if (!res.ok) {
-        statusEl.textContent = 'Calibration failed – show the whole board & retry';
-        return;
-      }
-
-      /* websocket -------------------------------------------------------- */
-      ws = new WebSocket(wsURL());
-      ws.onopen    = () => statusEl.textContent = 'Connected – tracking moves.';
-      ws.onclose   = () => statusEl.textContent = 'WebSocket closed';
-      ws.onerror   = e  => console.error('WS error', e);
-      ws.onmessage = ({data}) => {
-        const msg = JSON.parse(data);
-        if (msg.move) board.move(msg.move);        // animate move
-        if (msg.history) historyEl.textContent = msg.history.join(' ');
-        if (msg.err)  statusEl.textContent = msg.err;
-      };
-
-      /* loop ------------------------------------------------------------- */
-      frameTimer = setInterval(async () => {
-        if (ws.readyState !== 1) return;           // skip unless OPEN
-        try {
-          const fr   = await grabFrame(track);
-          const blob = await frameToBlob(fr);
-          const b64  = await blobToB64(blob);
-          ws.send(b64);
-        } catch (e) {
-          console.error('frame error', e);
-        }
-      }, 1000);                                    // 1 FPS (adjust to taste)
+      track = stream.getVideoTracks()[0];
+      statusEl.textContent = 'Point camera at empty board and press \"Calibrate board\"';
+      calibBtn.disabled = false;
     } catch (err) {
       console.error(err);
       statusEl.textContent = 'Camera access failed: ' + err.message;
