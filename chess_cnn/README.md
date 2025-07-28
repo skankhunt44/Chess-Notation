@@ -14,7 +14,7 @@ python chess_square_classifier2.py train \
        --model-out ../assets/model.pt
 
 ## Runs inference on a new image (or one from the dataset) and prints an 8 × 8 occupancy matrix:
-python chess_square_classifier2.py infer --model model.pt --image 123.jpg --show
+python chess_square_classifier2.py infer --model ../assets/model.pt --image data/0046.png
 
 
 ## preview after wrap
