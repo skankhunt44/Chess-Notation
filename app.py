@@ -2,9 +2,6 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Body
 import base64
 import cv2 as cv
 import numpy as np
-import logging
-
-logging.basicConfig(level=logging.INFO)
 
 from vision import find_board, warp_board, occupancy_cnn, draw_board_overlay
 from tracker import SquareTracker
@@ -96,12 +93,7 @@ async def ws_endpoint(ws: WebSocket):
             board_img, _ = warp_board(frame, _corners)
             occ = occupancy_cnn(board_img)
             move, fen = tracker.update(occ)
-
-            if move:
-                logging.info("Move detected: %s -> %s", move, fen)
-            else:
-                logging.debug("No move detected for frame")
-
+            
             if move:
                 await ws.send_json({"move": move, "fen": fen, "history": tracker.get_history()})
             else:
