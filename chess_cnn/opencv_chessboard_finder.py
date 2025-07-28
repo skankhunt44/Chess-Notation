@@ -57,23 +57,46 @@ def overlay(img_rgb: np.ndarray, pts: np.ndarray):
         cv2.circle(over, (int(p[0]), int(p[1])), 4, (0, 255, 0), -1)
     return over
 
-def outer_corners_from_inner(pts, rows=7, cols=7):
-    """
-    pts: (rows*cols,2) array from findChessboardCorners,
-         ordered row-major TL➜BR.
-    returns: 4×2 array TL, TR, BR, BL of the outer frame corners.
-    """
-    pts = pts.reshape(rows, cols, 2)
-    # unit vectors along a rank (→) and a file (↓)
-    u = (pts[0, -1] - pts[0, 0]) / (cols - 1)
-    v = (pts[-1, 0] - pts[0, 0]) / (rows - 1)
+def outer_corners_from_inner(pts, rows: int = 7, cols: int = 7) -> np.ndarray:
+    """Return the four outer board corners from the detected inner grid.
 
-    tl = pts[0, 0]     - 0.5 * (u + v)
-    tr = pts[0, -1]    + 0.5 * (u - v)
-    br = pts[-1, -1]   + 0.5 * (u + v)
-    bl = pts[-1, 0]    + 0.5 * (v - u)
+    Parameters
+    ----------
+    pts : array_like
+        ``(rows*cols, 2)`` array of detected inner intersections in row-major
+        TL→BR order.
+    rows, cols : int
+        Dimensions of the inner corner grid (typically 7 × 7 for an 8 × 8
+        board).
 
-    return np.stack([tl, tr, br, bl])
+    Returns
+    -------
+    numpy.ndarray
+        ``(4, 2)`` array of the outer frame corners ordered TL, TR, BR, BL.
+    """
+
+    pts = pts.reshape(-1, 2).astype(np.float32)
+
+    # Build the matching ideal grid coordinates (0…rows‑1, 0…cols‑1)
+    ideal = np.array(
+        [[c, r] for r in range(rows) for c in range(cols)], dtype=np.float32
+    )
+    ideal = ideal[: len(pts)]
+
+    # Solve for the homography from ideal grid → detected pixels
+    H, _ = cv2.findHomography(ideal, pts, cv2.RANSAC, 2.0)
+    if H is None:
+        raise RuntimeError("Homography solve failed")
+
+    frame_ideal = np.float32([
+        [-1, -1],      # TL
+        [cols, -1],    # TR
+        [cols, rows],  # BR
+        [-1, rows],    # BL
+    ])
+
+    frame_px = cv2.perspectiveTransform(frame_ideal[None, ...], H)[0]
+    return frame_px
 
 def overlay(img: np.ndarray, pts: np.ndarray, colours=None):
     """Return *img* with small circles drawn at ``pts``.
