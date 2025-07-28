@@ -77,9 +77,10 @@ class SquareTracker:
         # ------------------------------------------------------------------
         candidate = None
         for move in self.board.legal_moves:
-            # Assume queen on promotion by default (python‑chess uses None → Q)
-            if move.promotion is None and self._is_pawn_promotion(move):
-                move = chess.Move(move.from_square, move.to_square, promotion=chess.QUEEN)
+            if self.board.piece_type_at(move.from_square) == chess.PAWN \
+                    and chess.square_rank(move.to_square) in (0, 7):
+                move = chess.Move(move.from_square, move.to_square,
+                                promotion=chess.QUEEN)
 
             next_board = self.board.copy(stack=False)
             next_board.push(move)
