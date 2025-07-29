@@ -207,6 +207,49 @@ def infer_board(model, image_path: str | Path, device, board_size: int = 800, sq
     return board
 
 
+# python chess_square_classifier2.py infer-warp \
+#        --model ../assets/model.pt \
+#        --board-img ../calib_warp.jpg
+
+# ────────────────────────────────────────────────────────────────────────────────
+# ★  tiny helper – nice to visualise in the terminal
+# ────────────────────────────────────────────────────────────────────────────────
+_CHR = {0: '.', 1: 'W', 2: 'B'}          # empty / white / black
+def ascii_occ(mat: np.ndarray) -> str:
+    return '\n'.join(' '.join(_CHR[x] for x in row) for row in mat)
+
+# ────────────────────────────────────────────────────────────────────────────────
+# ★  inference on an *already warped* image (no JSON, no corners)
+# ────────────────────────────────────────────────────────────────────────────────
+def infer_warp_board(model, board_img_path: str | Path,
+                     device,
+                     square_size: int = 64) -> np.ndarray:
+    img = cv2.cvtColor(cv2.imread(str(board_img_path)), cv2.COLOR_BGR2RGB)
+    if img is None:
+        raise FileNotFoundError(board_img_path)
+    if img.shape[0] != img.shape[1]:
+        raise ValueError("image must be a square top-down warp of the board")
+    board_px   = img.shape[0]
+    cell_px    = board_px // 8
+    transform  = transforms.Compose([
+        transforms.ToTensor(),
+        transforms.Normalize([0.485, 0.456, 0.406],
+                             [0.229, 0.224, 0.225]),
+    ])
+    occ = np.zeros((8, 8), np.int8)
+    with torch.no_grad():
+        for r in range(8):
+            for c in range(8):
+                crop = img[r*cell_px:(r+1)*cell_px,
+                           c*cell_px:(c+1)*cell_px]
+                crop = cv2.resize(crop, (square_size, square_size))
+                pred = model(transform(crop).unsqueeze(0)
+                                   .to(device)).argmax(1).item()
+                occ[r, c] = pred
+    return occ
+
+
+
 def preview_board(image_path: str | Path, out_path: str | None, board_size: int = 800, show: bool = False):
     img_path = Path(image_path)
     with open(img_path.with_suffix(".json")) as f:
@@ -284,6 +327,11 @@ def main():
     inf.add_argument("--model", required=True)
     inf.add_argument("--image", required=True)
 
+    iw = sub.add_parser("infer-warp", help="infer from an 800×800 warp")
+    iw.add_argument("--model", required=True)
+    iw.add_argument("--board-img", required=True)
+
+
     args = p.parse_args()
     device = torch.device("cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu")
 
@@ -326,6 +374,21 @@ def main():
         model.load_state_dict(torch.load(args.model, map_location=device))
         board = infer_board(model, args.image, device)
         print(board)
+    
+    # -------------------------------------------------- plain JSON-based infer
+    if args.cmd == "infer":
+        ...
+
+    # -------------------------------------------------- ★ direct warp infer
+    if args.cmd == "infer-warp":
+        model = build_model().to(device)
+        model.load_state_dict(torch.load(args.model, map_location=device))
+        board = infer_warp_board(model, args.board_img, device)
+        print(board)               # numeric
+        print()                    # pretty
+        print(ascii_occ(board))
+        return
+
 
 
 if __name__ == "__main__":
