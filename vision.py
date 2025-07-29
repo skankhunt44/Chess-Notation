@@ -169,3 +169,8 @@ def draw_board_overlay(frame: np.ndarray, corners: np.ndarray, colour=(0, 255, 0
             pt2 = tuple(map(int, corners[(i + 1) % 4]))
             cv.line(out, pt1, pt2, colour, 2, cv.LINE_AA)
     return out
+
+
+def ascii_occ(mat):
+    chars = {0: '.', 1: 'W', 2: 'B'}
+    return '\n'.join(' '.join(chars[x] for x in row) for row in mat)

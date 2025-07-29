@@ -3,7 +3,7 @@ import base64
 import cv2 as cv
 import numpy as np
 
-from vision import find_board, warp_board, occupancy_cnn, draw_board_overlay
+from vision import find_board, warp_board, occupancy_cnn, draw_board_overlay, ascii_occ
 from tracker import SquareTracker
 
 from fastapi.staticfiles import StaticFiles
@@ -36,16 +36,6 @@ def _decode_image(data_url: str) -> np.ndarray:
 # ---------------------------------------------------------------------------
 # HTTP endpoint – one‑shot board calibration
 # ---------------------------------------------------------------------------
-
-# @app.post("/calibrate")
-# async def calibrate(image_b64: str = Body(..., media_type="text/plain")):
-#     global _corners
-#     frame = _decode_image(image_b64)
-#     corners = find_board(frame)
-#     if corners is None:
-#         raise HTTPException(status_code=400, detail="Board not found – make sure the entire board is visible and try again.")
-#     _corners = corners
-#     return {"ok": True}
 
 @app.post("/calibrate")
 async def calibrate(image_b64: str = Body(..., media_type="text/plain")):
@@ -90,10 +80,16 @@ async def ws_endpoint(ws: WebSocket):
                 await ws.send_json({"err": "Not calibrated"})
                 continue
 
+            cv.imwrite("calib_ok.jpg", frame) # the raw camera frame
             board_img, _ = warp_board(frame, _corners)
+
+            cv.imwrite("calib_warp.jpg", board_img) # the rectified 800 × 800 board
             occ = occupancy_cnn(board_img)
-            move, fen = tracker.update(occ)
+
+            print(ascii_occ(occ))
             
+            move, fen = tracker.update(occ)
+
             if move:
                 await ws.send_json({"move": move, "fen": fen, "history": tracker.get_history()})
             else:
