@@ -41,6 +41,31 @@ MEAN     = [0.485, 0.456, 0.406]
 STD      = [0.229, 0.224, 0.225]
 
 
+PIECE_NAME = {
+    "p": "pawn",   "r": "rook",  "n": "knight",
+    "b": "bishop", "q": "queen", "k": "king"
+}
+
+def pieces_to_dict(meta: dict) -> dict[str, str]:
+    """
+    Return {"e4": "pawn_white", "g8": "king_black", ...}
+    From a JSON that contains only:
+        {
+           "pieces":[
+               {"piece":"P","square":"e4", ...},
+               {"piece":"k","square":"g8", ...}
+           ]
+        }
+    """
+    sqdict = {}
+    for entry in meta["pieces"]:
+        sq   = entry["square"].lower()          # "e4"
+        ch   = entry["piece"]                   # 'P' or 'k'
+        side = "white" if ch.isupper() else "black"
+        name = PIECE_NAME[ch.lower()]           # "pawn" or "king"
+        sqdict[sq] = f"{name}_{side}"           # "pawn_white"
+    return sqdict
+
 # ------------------------------------------------------------
 #  Dataset
 # ------------------------------------------------------------

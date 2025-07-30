@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import json
+from logging import config
 from multiprocessing.pool import ThreadPool
 from pathlib import Path
 from typing import List, Tuple
@@ -21,6 +22,8 @@ import torch.nn as nn
 from torch.utils.data import DataLoader, Dataset, random_split
 from torchvision import datasets, models, transforms
 from tqdm import tqdm
+
+from orientation_utils import needs_flip_180
 
 
 def compute_homography(
@@ -69,82 +72,201 @@ CLASS_MAP = {"empty": 0, "white": 1, "black": 2}
 INV_CLASS = {v: k for k, v in CLASS_MAP.items()}
 
 
-class ChessSquareDataset(Dataset):
-    def __init__(self, root: str | Path, board_size: int = 800, square_size: int = 64, transform=None):
-        self.root = Path(root)
-        self.board_size = board_size
-        self.square_size = square_size
-        self.transform = transform or transforms.Compose([
-            transforms.ToTensor(),
-            transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),
-        ])
-        self.image_files = sorted(list(self.root.glob("*.jpg")) + list(self.root.glob("*.png")), key=lambda p: int(p.stem))
-        if not self.image_files:
-            raise RuntimeError("no images found in data‑dir")
-        self.index: List[Tuple[int, int, int]] = [(b, r, c) for b in range(len(self.image_files)) for r in range(8) for c in range(8)]
+# class ChessSquareDataset(Dataset):
+#     def __init__(self, root: str | Path, board_size: int = 800, square_size: int = 64, transform=None):
+#         self.root = Path(root)
+#         self.board_size = board_size
+#         self.square_size = square_size
+#         self.transform = transform or transforms.Compose([
+#             transforms.ToTensor(),
+#             transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),
+#         ])
+#         self.image_files = sorted(list(self.root.glob("*.jpg")) + list(self.root.glob("*.png")), key=lambda p: int(p.stem))
+#         if not self.image_files:
+#             raise RuntimeError("no images found in data‑dir")
+#         self.index: List[Tuple[int, int, int]] = [(b, r, c) for b in range(len(self.image_files)) for r in range(8) for c in range(8)]
 
-    def __len__(self):
-        return len(self.index)
+#     def __len__(self):
+#         return len(self.index)
 
     
+#     def _load_board(self, board_idx: int):
+#         # cache check
+#         if not hasattr(self, "_cache"):
+#             self._cache = {}
+#         if board_idx in self._cache:
+#             return self._cache[board_idx]
+
+#         # 1  read image + JSON
+#         img_path = self.image_files[board_idx]
+#         with open(img_path.with_suffix(".json")) as f:
+#             meta = json.load(f)
+#         img = cv2.cvtColor(cv2.imread(str(img_path)), cv2.COLOR_BGR2RGB)
+
+#         # 2  warp the board
+#         h, w = img.shape[:2]
+#         H = compute_homography(meta["corners"], w, h, size=self.board_size)
+#         warped = warp_board(img, H, size=self.board_size)
+
+#         # 3  build a per-square dict  { "A1": "p", … }
+#         if "config" in meta:                          # old synthetic set
+#             config = meta["config"]
+
+#         elif "pieces" in meta:                        # new set – list of pieces
+#             # keep the piece letter exactly as given (upper = white, lower = black)
+#             config = {p["square"].upper(): p["piece"] for p in meta["pieces"]}
+
+#         else:                                         # derive from FEN
+#             config = {}
+#             rows = meta["fen"].split()[0].split("/")
+#             for r, row in enumerate(rows):            # r = 0 is rank 8
+#                 file_idx = 0
+#                 for ch in row:
+#                     if ch.isdigit():
+#                         file_idx += int(ch)
+#                     else:
+#                         square = f"{chr(ord('A') + file_idx)}{8 - r}"
+#                         config[square] = ch
+#                         file_idx += 1
+
+#         # 4  store in cache and return
+#         self._cache[board_idx] = (warped, config)
+#         return self._cache[board_idx]
+
+
+
+#     def __getitem__(self, idx):
+#         board_idx, row, col = self.index[idx]
+#         warped, config = self._load_board(board_idx)
+#         cell_px = self.board_size // 8
+#         crop = warped[row * cell_px : (row + 1) * cell_px, col * cell_px : (col + 1) * cell_px]
+#         crop = cv2.resize(crop, (self.square_size, self.square_size))
+#         square = square_from_row_col(row, col)
+#         if square in config:
+#             # label = CLASS_MAP["white" if config[square].isupper() else "black"]
+#             val = config[square]
+#             # old files store "pawn_white"; new files store a single letter 'P' / 'k'
+#             is_white = val.endswith("white") or str(val).isupper()
+#             label = CLASS_MAP["white" if is_white else "black"]
+#         else:
+#             label = CLASS_MAP["empty"]
+#         crop = self.transform(crop)
+#         return crop, label
+
+
+class ChessSquareDataset(Dataset):
+    """
+    Yields (64×64 RGB Tensor,   label:int)
+           where label ∈ {0:empty, 1:white, 2:black}
+    """
+
+    def __init__(self,
+                 root: str | Path,
+                 board_size: int = 800,
+                 square_size: int = 64,
+                 transform=None):
+        self.root         = Path(root)
+        self.board_size   = board_size
+        self.square_size  = square_size
+        self.transform    = transform or transforms.Compose([
+            transforms.ToTensor(),
+            transforms.Normalize([0.485, 0.456, 0.406],
+                                 [0.229, 0.224, 0.225]),
+        ])
+
+        self.image_files  = sorted(
+            list(self.root.glob("*.jpg")) + list(self.root.glob("*.png")),
+            key=lambda p: int(p.stem)
+        )
+        if not self.image_files:
+            raise RuntimeError("no images found in data-dir")
+
+        # global index → (board_idx, row, col)
+        self.index: List[Tuple[int, int, int]] = [
+            (b, r, c)
+            for b in range(len(self.image_files))
+            for r in range(8)
+            for c in range(8)
+        ]
+
+        self._cache: dict[int, Tuple[np.ndarray, dict]] = {}
+        self._flip : dict[int, bool]                    = {}
+
+    # --------------------------------------------------------------
+    def __len__(self):  return len(self.index)
+
+    # --------------------------------------------------------------
     def _load_board(self, board_idx: int):
-        # cache check
-        if not hasattr(self, "_cache"):
-            self._cache = {}
+        """
+        Warp one board and return (warped_img, square_dict).
+        Flip the image 180° (and remember that decision) if JSON says
+        the camera was behind Black.
+        """
         if board_idx in self._cache:
             return self._cache[board_idx]
 
-        # 1  read image + JSON
         img_path = self.image_files[board_idx]
         with open(img_path.with_suffix(".json")) as f:
             meta = json.load(f)
-        img = cv2.cvtColor(cv2.imread(str(img_path)), cv2.COLOR_BGR2RGB)
 
-        # 2  warp the board
+        img = cv2.cvtColor(cv2.imread(str(img_path)), cv2.COLOR_BGR2RGB)
         h, w = img.shape[:2]
-        H = compute_homography(meta["corners"], w, h, size=self.board_size)
+
+        # ── 1  warp the board ─────────────────────────────────────
+        H  = compute_homography(meta["corners"], w, h, size=self.board_size)
         warped = warp_board(img, H, size=self.board_size)
 
-        # 3  build a per-square dict  { "A1": "p", … }
-        if "config" in meta:                          # old synthetic set
-            config = meta["config"]
+        # ── 2  decide orientation & maybe rotate ─────────────────
+        flip = needs_flip_180(meta, H)
+        if flip:
+            warped = cv2.rotate(warped, cv2.ROTATE_180)
+        self._flip[board_idx] = flip
 
-        elif "pieces" in meta:                        # new set – list of pieces
-            # keep the piece letter exactly as given (upper = white, lower = black)
-            config = {p["square"].upper(): p["piece"] for p in meta["pieces"]}
-
-        else:                                         # derive from FEN
-            config = {}
+        # ── 3  build square→piece-letter dict ────────────────────
+        if "config" in meta:                         # old schema
+            cfg = meta["config"]
+        elif "pieces" in meta:                       # new schema
+            cfg = {p["square"].upper(): p["piece"] for p in meta["pieces"]}
+        else:                                        # derive from FEN
+            cfg = {}
             rows = meta["fen"].split()[0].split("/")
-            for r, row in enumerate(rows):            # r = 0 is rank 8
-                file_idx = 0
+            for r, row in enumerate(rows):
+                f = 0
                 for ch in row:
                     if ch.isdigit():
-                        file_idx += int(ch)
+                        f += int(ch)
                     else:
-                        square = f"{chr(ord('A') + file_idx)}{8 - r}"
-                        config[square] = ch
-                        file_idx += 1
+                        cfg[f"{chr(ord('A')+f)}{8-r}"] = ch
+                        f += 1
 
-        # 4  store in cache and return
-        self._cache[board_idx] = (warped, config)
+        self._cache[board_idx] = (warped, cfg)
         return self._cache[board_idx]
 
-
-
-    def __getitem__(self, idx):
+    # --------------------------------------------------------------
+    def __getitem__(self, idx: int):
         board_idx, row, col = self.index[idx]
-        warped, config = self._load_board(board_idx)
-        cell_px = self.board_size // 8
-        crop = warped[row * cell_px : (row + 1) * cell_px, col * cell_px : (col + 1) * cell_px]
-        crop = cv2.resize(crop, (self.square_size, self.square_size))
-        square = square_from_row_col(row, col)
-        if square in config:
-            label = CLASS_MAP["white" if config[square].isupper() else "black"]
+        warped, cfg = self._load_board(board_idx)
+
+        # adjust indices if we rotated the warp
+        # if self._flip[board_idx]:
+        #     row, col = 7 - row, 7 - col
+
+        # crop + resize
+        cell = self.board_size // 8
+        crop = warped[row*cell:(row+1)*cell, col*cell:(col+1)*cell]
+        crop = cv2.resize(crop, (self.square_size, self.square_size),
+                          interpolation=cv2.INTER_LINEAR)
+
+        # label
+        square = f"{chr(ord('A')+col)}{8-row}"   # algebraic
+        if square in cfg:
+            val = cfg[square]
+            is_white = str(val).isupper() or str(val).endswith("white")
+            label = CLASS_MAP["white" if is_white else "black"]
         else:
             label = CLASS_MAP["empty"]
-        crop = self.transform(crop)
-        return crop, label
+
+        return self.transform(crop), label
 
 
 class CropFolderDataset(Dataset):
@@ -319,8 +441,12 @@ def preprocess_dataset(src: str | Path, dst: str | Path, workers: int = 6, board
                 crop = warped[r * cell_px : (r + 1) * cell_px, c * cell_px : (c + 1) * cell_px]
                 crop = cv2.resize(crop, (square_size, square_size))
                 sq = square_from_row_col(r, c)
-                if sq in meta["config"]:
-                    lbl = "white" if meta["config"][sq].endswith("_w") else "black"
+                # if sq in meta["config"]:
+                #     lbl = "white" if meta["config"][sq].endswith("_w") else "black"
+                if sq in config:
+                    val = config[sq]
+                    is_white = val.endswith("white") or str(val).isupper()
+                    lbl = "white" if is_white else "black"
                 else:
                     lbl = "empty"
                 cv2.imwrite(str(dst / lbl / f"{img_path.stem}_{r}{c}.png"), cv2.cvtColor(crop, cv2.COLOR_RGB2BGR))
