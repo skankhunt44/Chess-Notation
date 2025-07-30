@@ -270,6 +270,33 @@ def preview_board(image_path: str | Path, out_path: str | None, board_size: int 
         plt.imshow(grid); plt.axis("off"); plt.show()
 
 
+def _make_config(meta):
+    """Return { 'A1': 'P', ... } mapping for ANY meta format."""
+    if "config" in meta:                     # old synthetic set
+        return meta["config"]
+
+    if "pieces" in meta:                     # new list-of-pieces set
+        cfg = {}
+        for p in meta["pieces"]:
+            # keep the exact letter: upper = white, lower = black
+            cfg[p["square"].upper()] = p["piece"]
+        return cfg
+
+    # fallback – derive from FEN
+    cfg = {}
+    rows = meta["fen"].split()[0].split("/")
+    for r, row in enumerate(rows):           # r = 0 is rank 8
+        file_idx = 0
+        for ch in row:
+            if ch.isdigit():
+                file_idx += int(ch)
+            else:
+                sq = f"{chr(ord('A')+file_idx)}{8-r}"
+                cfg[sq] = ch
+                file_idx += 1
+    return cfg
+
+
 def preprocess_dataset(src: str | Path, dst: str | Path, workers: int = 6, board_size: int = 800, square_size: int = 64):
     src, dst = Path(src), Path(dst)
     for cls in CLASS_MAP:
@@ -279,6 +306,9 @@ def preprocess_dataset(src: str | Path, dst: str | Path, workers: int = 6, board
     def process(img_path: Path):
         with open(img_path.with_suffix(".json")) as f:
             meta = json.load(f)
+
+        config = _make_config(meta)
+
         img = cv2.cvtColor(cv2.imread(str(img_path)), cv2.COLOR_BGR2RGB)
         h, w = img.shape[:2]
         H = compute_homography(meta["corners"], w, h, size=board_size)
@@ -393,3 +423,11 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+# python chess_square_classifier2.py train \
+#        --data-dir data/ \
+#        --epochs   10 \
+#        --batch-size 256 \
+#        --lr 1e-3 \
+#        --model-out ../assests/model2.pt
