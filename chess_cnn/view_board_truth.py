@@ -65,3 +65,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+
+# python view_board_truth.py --image data/0046.png

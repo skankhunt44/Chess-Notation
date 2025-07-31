@@ -168,11 +168,21 @@ class ChessSquareDataset(Dataset):
         self.root         = Path(root)
         self.board_size   = board_size
         self.square_size  = square_size
-        self.transform    = transform or transforms.Compose([
+        # self.transform    = transform or transforms.Compose([
+        #     transforms.ToTensor(),
+        #     transforms.Normalize([0.485, 0.456, 0.406],
+        #                          [0.229, 0.224, 0.225]),
+        # ])
+        self.transform = transforms.Compose([
+            transforms.ColorJitter(.4, .4, .4, .2),     # colour + hue
+            transforms.RandomApply([                    # occasional blur
+                transforms.GaussianBlur(3, sigma=(0.1, 1.5))], p=0.3),
             transforms.ToTensor(),
+            transforms.RandomErasing(p=0.25, scale=(.02, .1)),
             transforms.Normalize([0.485, 0.456, 0.406],
-                                 [0.229, 0.224, 0.225]),
+                                [0.229, 0.224, 0.225]),
         ])
+
 
         self.image_files  = sorted(
             list(self.root.glob("*.jpg")) + list(self.root.glob("*.png")),
@@ -313,17 +323,24 @@ def infer_board(model, image_path: str | Path, device, board_size: int = 800, sq
     h, w = img.shape[:2]
     H = compute_homography(meta["corners"], w, h, size=board_size)
     warped = warp_board(img, H, size=board_size)
+
+    cv2.imwrite("warp_ok.png", cv2.cvtColor(warped, cv2.COLOR_RGB2BGR)) # debug
+
     tform = transforms.Compose([
         transforms.ToTensor(),
         transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),
     ])
     cell_px = board_size // 8
+    print("board size:", board_size, "cell size:", cell_px) # debug
     board = np.zeros((8, 8), dtype=int)
     with torch.no_grad():
         for r in range(8):
             for c in range(8):
                 crop = warped[r * cell_px : (r + 1) * cell_px, c * cell_px : (c + 1) * cell_px]
                 crop = cv2.resize(crop, (square_size, square_size))
+
+                cv2.imwrite(f"crop_{r}_{c}.png", cv2.cvtColor(crop, cv2.COLOR_RGB2BGR))  # debug
+
                 pred = model(tform(crop).unsqueeze(0).to(device)).argmax(1).item()
                 board[r, c] = pred
     return board
@@ -347,12 +364,26 @@ def infer_warp_board(model, board_img_path: str | Path,
                      device,
                      square_size: int = 64) -> np.ndarray:
     img = cv2.cvtColor(cv2.imread(str(board_img_path)), cv2.COLOR_BGR2RGB)
+    model.eval()
+
+    cv2.imwrite("warped_ok.png", img) # debug
+    cv2.imwrite("warped_ok_colour_correct.png", cv2.cvtColor(img, cv2.COLOR_RGB2BGR)) # debug
+
     if img is None:
         raise FileNotFoundError(board_img_path)
     if img.shape[0] != img.shape[1]:
         raise ValueError("image must be a square top-down warp of the board")
+
+    
+    # # quick brightness heuristic (no JSON available)
+    # # flip if top-left square is lighter than bottom-right
+    # cell = img.shape[0] // 8
+    # if img[:cell,:cell].mean() > img[-cell:,-cell:].mean():
+    #     img = cv2.rotate(img, cv2.ROTATE_180)
+
     board_px   = img.shape[0]
     cell_px    = board_px // 8
+    print("board px:", board_px, "cell size:", cell_px) # debug
     transform  = transforms.Compose([
         transforms.ToTensor(),
         transforms.Normalize([0.485, 0.456, 0.406],
@@ -365,6 +396,9 @@ def infer_warp_board(model, board_img_path: str | Path,
                 crop = img[r*cell_px:(r+1)*cell_px,
                            c*cell_px:(c+1)*cell_px]
                 crop = cv2.resize(crop, (square_size, square_size))
+
+                cv2.imwrite(f"cropped_{r}_{c}.png", crop)  # debug
+                
                 pred = model(transform(crop).unsqueeze(0)
                                    .to(device)).argmax(1).item()
                 occ[r, c] = pred
@@ -382,11 +416,11 @@ def preview_board(image_path: str | Path, out_path: str | None, board_size: int 
     warped = warp_board(img, H, size=board_size)
     grid = warped.copy()
     cell_px = board_size // 8
-    for i in range(9):
-        cv2.line(grid, (0, i * cell_px), (board_size, i * cell_px), (0, 255, 0), 1)
-        cv2.line(grid, (i * cell_px, 0), (i * cell_px, board_size), (0, 255, 0), 1)
-    if out_path:
-        cv2.imwrite(str(out_path), cv2.cvtColor(grid, cv2.COLOR_RGB2BGR))
+    # for i in range(9):
+    #     cv2.line(grid, (0, i * cell_px), (board_size, i * cell_px), (0, 255, 0), 1)
+    #     cv2.line(grid, (i * cell_px, 0), (i * cell_px, board_size), (0, 255, 0), 1)
+    # if out_path:
+    #     cv2.imwrite(str(out_path), cv2.cvtColor(grid, cv2.COLOR_RGB2BGR))
     if show:
         import matplotlib.pyplot as plt
         plt.imshow(grid); plt.axis("off"); plt.show()
@@ -536,6 +570,7 @@ def main():
         ...
 
     # -------------------------------------------------- ★ direct warp infer
+
     if args.cmd == "infer-warp":
         model = build_model().to(device)
         model.load_state_dict(torch.load(args.model, map_location=device))
