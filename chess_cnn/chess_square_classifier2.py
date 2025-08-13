@@ -72,88 +72,6 @@ CLASS_MAP = {"empty": 0, "white": 1, "black": 2}
 INV_CLASS = {v: k for k, v in CLASS_MAP.items()}
 
 
-# class ChessSquareDataset(Dataset):
-#     def __init__(self, root: str | Path, board_size: int = 800, square_size: int = 64, transform=None):
-#         self.root = Path(root)
-#         self.board_size = board_size
-#         self.square_size = square_size
-#         self.transform = transform or transforms.Compose([
-#             transforms.ToTensor(),
-#             transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),
-#         ])
-#         self.image_files = sorted(list(self.root.glob("*.jpg")) + list(self.root.glob("*.png")), key=lambda p: int(p.stem))
-#         if not self.image_files:
-#             raise RuntimeError("no images found in data‑dir")
-#         self.index: List[Tuple[int, int, int]] = [(b, r, c) for b in range(len(self.image_files)) for r in range(8) for c in range(8)]
-
-#     def __len__(self):
-#         return len(self.index)
-
-    
-#     def _load_board(self, board_idx: int):
-#         # cache check
-#         if not hasattr(self, "_cache"):
-#             self._cache = {}
-#         if board_idx in self._cache:
-#             return self._cache[board_idx]
-
-#         # 1  read image + JSON
-#         img_path = self.image_files[board_idx]
-#         with open(img_path.with_suffix(".json")) as f:
-#             meta = json.load(f)
-#         img = cv2.cvtColor(cv2.imread(str(img_path)), cv2.COLOR_BGR2RGB)
-
-#         # 2  warp the board
-#         h, w = img.shape[:2]
-#         H = compute_homography(meta["corners"], w, h, size=self.board_size)
-#         warped = warp_board(img, H, size=self.board_size)
-
-#         # 3  build a per-square dict  { "A1": "p", … }
-#         if "config" in meta:                          # old synthetic set
-#             config = meta["config"]
-
-#         elif "pieces" in meta:                        # new set – list of pieces
-#             # keep the piece letter exactly as given (upper = white, lower = black)
-#             config = {p["square"].upper(): p["piece"] for p in meta["pieces"]}
-
-#         else:                                         # derive from FEN
-#             config = {}
-#             rows = meta["fen"].split()[0].split("/")
-#             for r, row in enumerate(rows):            # r = 0 is rank 8
-#                 file_idx = 0
-#                 for ch in row:
-#                     if ch.isdigit():
-#                         file_idx += int(ch)
-#                     else:
-#                         square = f"{chr(ord('A') + file_idx)}{8 - r}"
-#                         config[square] = ch
-#                         file_idx += 1
-
-#         # 4  store in cache and return
-#         self._cache[board_idx] = (warped, config)
-#         return self._cache[board_idx]
-
-
-
-#     def __getitem__(self, idx):
-#         board_idx, row, col = self.index[idx]
-#         warped, config = self._load_board(board_idx)
-#         cell_px = self.board_size // 8
-#         crop = warped[row * cell_px : (row + 1) * cell_px, col * cell_px : (col + 1) * cell_px]
-#         crop = cv2.resize(crop, (self.square_size, self.square_size))
-#         square = square_from_row_col(row, col)
-#         if square in config:
-#             # label = CLASS_MAP["white" if config[square].isupper() else "black"]
-#             val = config[square]
-#             # old files store "pawn_white"; new files store a single letter 'P' / 'k'
-#             is_white = val.endswith("white") or str(val).isupper()
-#             label = CLASS_MAP["white" if is_white else "black"]
-#         else:
-#             label = CLASS_MAP["empty"]
-#         crop = self.transform(crop)
-#         return crop, label
-
-
 class ChessSquareDataset(Dataset):
     """
     Yields (64×64 RGB Tensor,   label:int)
@@ -174,6 +92,7 @@ class ChessSquareDataset(Dataset):
         #                          [0.229, 0.224, 0.225]),
         # ])
         self.transform = transforms.Compose([
+            transforms.ToPILImage(),
             transforms.ColorJitter(.4, .4, .4, .2),     # colour + hue
             transforms.RandomApply([                    # occasional blur
                 transforms.GaussianBlur(3, sigma=(0.1, 1.5))], p=0.3),
@@ -453,40 +372,149 @@ def _make_config(meta):
     return cfg
 
 
-def preprocess_dataset(src: str | Path, dst: str | Path, workers: int = 6, board_size: int = 800, square_size: int = 64):
+# def preprocess_dataset(src: str | Path, dst: str | Path, workers: int = 6, board_size: int = 800, square_size: int = 64):
+#     src, dst = Path(src), Path(dst)
+#     for cls in CLASS_MAP:
+#         (dst / cls).mkdir(parents=True, exist_ok=True)
+#     imgs = sorted(list(src.glob("*.jpg")) + list(src.glob("*.png")), key=lambda p: int(p.stem))
+
+#     def process(img_path: Path):
+#         with open(img_path.with_suffix(".json")) as f:
+#             meta = json.load(f)
+
+#         config = _make_config(meta)
+
+#         img = cv2.cvtColor(cv2.imread(str(img_path)), cv2.COLOR_BGR2RGB)
+#         h, w = img.shape[:2]
+#         H = compute_homography(meta["corners"], w, h, size=board_size)
+#         warped = warp_board(img, H, size=board_size)
+#         cell_px = board_size // 8
+#         for r in range(8):
+#             for c in range(8):
+#                 crop = warped[r * cell_px : (r + 1) * cell_px, c * cell_px : (c + 1) * cell_px]
+#                 crop = cv2.resize(crop, (square_size, square_size))
+#                 sq = square_from_row_col(r, c)
+#                 # if sq in meta["config"]:
+#                 #     lbl = "white" if meta["config"][sq].endswith("_w") else "black"
+#                 if sq in config:
+#                     val = config[sq]
+#                     is_white = val.endswith("white") or str(val).isupper()
+#                     lbl = "white" if is_white else "black"
+#                 else:
+#                     lbl = "empty"
+#                 cv2.imwrite(str(dst / lbl / f"{img_path.stem}_{r}{c}.png"), cv2.cvtColor(crop, cv2.COLOR_RGB2BGR))
+
+#     with ThreadPool(workers) as pool:
+#         list(tqdm(pool.imap_unordered(process, imgs), total=len(imgs)))
+
+
+def preprocess_dataset(src: str | Path, dst: str | Path, workers: int = 6,
+                       board_size: int = 800, square_size: int = 64):
     src, dst = Path(src), Path(dst)
-    for cls in CLASS_MAP:
-        (dst / cls).mkdir(parents=True, exist_ok=True)
-    imgs = sorted(list(src.glob("*.jpg")) + list(src.glob("*.png")), key=lambda p: int(p.stem))
+    CLASS_DIRS = {"E":"0_empty", "W":"1_white", "B":"2_black"}  # canonical order
+    for d in CLASS_DIRS.values():
+        (dst / d).mkdir(parents=True, exist_ok=True)
 
-    def process(img_path: Path):
-        with open(img_path.with_suffix(".json")) as f:
-            meta = json.load(f)
+    # Prefer new-format label JSONs first
+    label_jsons = sorted(src.rglob("labels_*.json"), key=lambda p: p.stem)
 
-        config = _make_config(meta)
+    # Fallback to image list (old datasets)
+    if not label_jsons:
+        imgs = sorted(list(src.rglob("*.jpg")) + list(src.rglob("*.png")), key=lambda p: p.stem)
+    else:
+        imgs = label_jsons  # we'll handle differently in process()
 
+    def process(p: Path):
+        # ───────────── NEW: direct-warp samples with labels_XXXX.json ─────────────
+        if p.suffix.lower() == ".json" and p.name.startswith("labels_"):
+            meta = json.loads(p.read_text())
+            img_path = p.parent / meta["image"]   # e.g., img_0001.png
+            if not img_path.exists():
+                print(f"[warn] missing image for {p.name}: {img_path}")
+                return
+            warped = cv2.cvtColor(cv2.imread(str(img_path)), cv2.COLOR_BGR2RGB)
+            h, w = warped.shape[:2]
+            cell_px = min(h, w) // 8
+            lbl_map = {"E": "0_empty", "W": "1_white", "B": "2_black"}
+            labels = meta.get("labels", [])
+            if len(labels) != 64:
+                print(f"[warn] {p.name} has {len(labels)} labels (expected 64); skipping")
+                return
+            k = 0
+            for r in range(8):
+                for c in range(8):
+                    crop = warped[r*cell_px:(r+1)*cell_px, c*cell_px:(c+1)*cell_px]
+                    crop = cv2.resize(crop, (square_size, square_size))
+                    cls = lbl_map.get(labels[k], "empty"); k += 1
+                    out = dst / cls / f"{img_path.stem}_{r}{c}.png"
+                    ok = cv2.imwrite(str(out), cv2.cvtColor(crop, cv2.COLOR_RGB2BGR))
+                    if not ok:
+                        print(f"[warn] failed to write {out}")
+            return
+
+        # ───────────── OLD: images with corners/pieces/FEN ─────────────
+        img_path = p
+        meta_path = img_path.with_suffix(".json")
+        if not meta_path.exists():
+            # quietly skip if no matching meta for old format
+            return
+        meta = json.loads(meta_path.read_text())
         img = cv2.cvtColor(cv2.imread(str(img_path)), cv2.COLOR_BGR2RGB)
         h, w = img.shape[:2]
         H = compute_homography(meta["corners"], w, h, size=board_size)
         warped = warp_board(img, H, size=board_size)
+        config = _make_config(meta)
         cell_px = board_size // 8
         for r in range(8):
             for c in range(8):
-                crop = warped[r * cell_px : (r + 1) * cell_px, c * cell_px : (c + 1) * cell_px]
+                crop = warped[r*cell_px:(r+1)*cell_px, c*cell_px:(c+1)*cell_px]
                 crop = cv2.resize(crop, (square_size, square_size))
                 sq = square_from_row_col(r, c)
-                # if sq in meta["config"]:
-                #     lbl = "white" if meta["config"][sq].endswith("_w") else "black"
                 if sq in config:
                     val = config[sq]
-                    is_white = val.endswith("white") or str(val).isupper()
+                    is_white = str(val).endswith("white") or str(val).isupper()
                     lbl = "white" if is_white else "black"
                 else:
                     lbl = "empty"
-                cv2.imwrite(str(dst / lbl / f"{img_path.stem}_{r}{c}.png"), cv2.cvtColor(crop, cv2.COLOR_RGB2BGR))
+                lbl = "white" if is_white else "black" if sq in config else "empty"
+                folder = {"empty":"0_empty", "white":"1_white", "black":"2_black"}[lbl]
+                out = dst / folder / f"{img_path.stem}_{r}{c}.png"
+                cv2.imwrite(str(out), cv2.cvtColor(crop, cv2.COLOR_RGB2BGR))
 
     with ThreadPool(workers) as pool:
         list(tqdm(pool.imap_unordered(process, imgs), total=len(imgs)))
+
+
+# # Preprocess your new session to crops
+# python chess_square_classifier2.py preprocess \
+#   --src-dir data/session_*/samples \
+#   --dst-dir ../data/crops_my_cam \
+#   --workers 2
+
+# # Train (from scratch)
+# python chess_square_classifier2.py train \
+#   --data-dir data/crops_my_cam \
+#   --preprocessed \
+#   --epochs 10 \
+#   --batch-size 256 \
+#   --lr 3e-4 \
+#   --model-out ../assets/model.pt
+
+# # ...or continue from your existing model.pt
+# python chess_square_classifier2.py train \
+#   --data-dir data/crops_my_cam \
+#   --preprocessed \
+#   --epochs 6 \
+#   --batch-size 256 \
+#   --lr 2e-4 \
+#   --resume ../assets/model.pt \
+#   --model-out ../assets/model.pt
+
+# Quick sanity check on a saved warp
+# python chess_square_classifier2.py infer-warp \
+#   --model ../assets/model.pt \
+#   --board-img ../data/session_2591762550623958/samples/img_0001.png
+
 
 
 def main():
@@ -502,6 +530,8 @@ def main():
     tr.add_argument("--val-split", type=float, default=0.1)
     tr.add_argument("--workers", type=int, default=4)
     tr.add_argument("--preprocessed", action="store_true")
+    tr.add_argument("--resume", default=None, help="path to an existing model.pt to continue training")
+
 
     pp = sub.add_parser("preprocess")
     pp.add_argument("--src-dir", required=True)
@@ -534,30 +564,46 @@ def main():
         return
 
     if args.cmd == "train":
-        if args.preprocessed:
-            ds = CropFolderDataset(args.data_dir, transform=transforms.Compose([
-                transforms.ToTensor(),
-                transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),
-            ]))
-        else:
-            ds = ChessSquareDataset(args.data_dir)
-        val_len = int(len(ds) * args.val_split)
-        train_len = len(ds) - val_len
-        train_set, val_set = random_split(ds, [train_len, val_len])
-        tl = DataLoader(train_set, batch_size=args.batch_size, shuffle=True, num_workers=args.workers)
-        vl = DataLoader(val_set, batch_size=args.batch_size, shuffle=False, num_workers=args.workers)
-        model = build_model().to(device)
-        criterion = nn.CrossEntropyLoss()
-        optim = torch.optim.AdamW(model.parameters(), lr=args.lr)
-        best = 0.0
-        for epoch in range(1, args.epochs + 1):
-            tloss, tacc = epoch_loop(model, tl, criterion, optim, device, True)
-            vloss, vacc = epoch_loop(model, vl, criterion, optim, device, False)
-            print(f"epoch {epoch:02d}: train {tacc:.3f} val {vacc:.3f}")
-            if vacc > best:
-                best = vacc
-                torch.save(model.state_dict(), args.model_out)
-        return
+        if args.cmd == "train":
+            if args.preprocessed:
+                ds = CropFolderDataset(args.data_dir, transform=transforms.Compose([
+                    transforms.ToTensor(),
+                    transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),
+                ]))
+            else:
+                ds = ChessSquareDataset(args.data_dir)  # <-- this now returns PIL or add ToPILImage
+
+            val_len  = int(len(ds) * args.val_split)
+            train_len = len(ds) - val_len
+            train_set, val_set = random_split(ds, [train_len, val_len])
+
+            tl = DataLoader(train_set, batch_size=args.batch_size, shuffle=True,  num_workers=args.workers)
+            vl = DataLoader(val_set,   batch_size=args.batch_size, shuffle=False, num_workers=args.workers)
+
+            model = build_model().to(device)
+
+            # >>> LOAD EXISTING WEIGHTS HERE <<<
+            if args.resume:
+                sd = torch.load(args.resume, map_location=device)
+                # handle both "state_dict" checkpoints and raw state_dict
+                if isinstance(sd, dict) and "state_dict" in sd:
+                    sd = sd["state_dict"]
+                model.load_state_dict(sd, strict=True)
+                print(f"Resumed weights from {args.resume}")
+
+            criterion = nn.CrossEntropyLoss()
+            opt = torch.optim.AdamW(model.parameters(), lr=args.lr)
+            best = 0.0
+
+            for epoch in range(1, args.epochs + 1):
+                tloss, tacc = epoch_loop(model, tl, criterion, opt, device, True)
+                vloss, vacc = epoch_loop(model, vl, criterion, opt, device, False)
+                print(f"epoch {epoch:02d}: train {tacc:.3f} val {vacc:.3f}")
+                if vacc > best:
+                    best = vacc
+                    torch.save(model.state_dict(), args.model_out)
+            return
+
 
     if args.cmd == "infer":
         model = build_model().to(device)
@@ -579,6 +625,8 @@ def main():
         print()                    # pretty
         print(ascii_occ(board))
         return
+    
+
 
 
 
@@ -588,7 +636,7 @@ if __name__ == "__main__":
 
 # python chess_square_classifier2.py train \
 #        --data-dir data/ \
-#        --epochs   10 \
+#        --epochs   5 \
 #        --batch-size 256 \
 #        --lr 1e-3 \
-#        --model-out ../assests/model2.pt
+#        --model-out ../assets/model.pt

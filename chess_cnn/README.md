@@ -19,3 +19,29 @@ python chess_square_classifier2.py infer --model ../assets/model.pt --image data
 
 ## preview after wrap
 python chess_square_classifier2.py preview --image data/0046.png --show
+
+
+# Preprocess your new session to crops
+python chess_square_classifier2.py preprocess \
+  --src-dir data/session_259206557.../samples \
+  --dst-dir data/crops_my_cam \
+  --workers 2
+
+# Train (from scratch)
+python chess_square_classifier2.py train \
+  --data-dir data/crops_my_cam \
+  --preprocessed \
+  --epochs 10 \
+  --batch-size 256 \
+  --lr 3e-4 \
+  --model-out assets/model.pt
+
+# ...or continue from your existing model.pt
+python chess_square_classifier2.py train \
+  --data-dir data/crops_my_cam \
+  --preprocessed \
+  --epochs 6 \
+  --batch-size 256 \
+  --lr 2e-4 \
+  --resume assets/model.pt \
+  --model-out assets/model.pt

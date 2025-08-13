@@ -8,6 +8,10 @@ from tracker import SquareTracker
 
 from fastapi.staticfiles import StaticFiles
 
+import json, os
+from pathlib import Path
+from autolabel import learn_proto, auto_label
+
 
 app = FastAPI()
 # move to the end of the file
@@ -43,13 +47,12 @@ async def calibrate(image_b64: str = Body(..., media_type="text/plain")):
     frame = _decode_image(image_b64)
     corners = find_board(frame)
     if corners is None:
-        dbg = draw_board_overlay(frame, corners)
-        cv.imwrite("calib_fail.jpg", dbg)
+        cv.imwrite("calib_dbg_fail.jpg", frame)
         raise HTTPException(400, "Board not found")
-    dbg = draw_board_overlay(frame, corners)
-    cv.imwrite("calib_fail.jpg", dbg)
+    cv.imwrite("calib_dbg_ok.jpg", draw_board_overlay(frame, corners))
     _corners = corners
     return {"ok": True}
+
 
 # ---------------------------------------------------------------------------
 # HTTP endpoint – current move history
@@ -97,6 +100,65 @@ async def ws_endpoint(ws: WebSocket):
     except WebSocketDisconnect:
         # Normal disconnect; nothing special to clean up for now.
         pass
+
+
+
+STATE = {"H": None, "empty": None, "protoW": None, "protoB": None}
+
+@app.post("/capture-empty")
+async def capture_empty(image_b64: str = Body(..., media_type="text/plain")):
+    if _corners is None:
+        raise HTTPException(400, "Not calibrated")
+    frame = _decode_image(image_b64)
+    board_img, _ = warp_board(frame, _corners)
+    STATE["empty"] = board_img
+    cv.imwrite("empty.png", board_img)
+    return {"ok": True}
+
+@app.post("/teach-color/{which}")
+async def teach_color(which: str, image_b64: str = Body(..., media_type="text/plain")):
+    if STATE["empty"] is None:
+        raise HTTPException(400, "Capture empty first")
+    frame = _decode_image(image_b64)
+    board_img, _ = warp_board(frame, _corners)
+    proto = learn_proto(STATE["empty"], board_img)
+    if which.lower() == "white":
+        STATE["protoW"] = proto
+    else:
+        STATE["protoB"] = proto
+    return {"ok": True}
+
+@app.post("/propose-labels")
+async def propose_labels(image_b64: str = Body(..., media_type="text/plain")):
+    for k in ("empty","protoW","protoB"):
+        if STATE[k] is None:
+            raise HTTPException(400, f"Missing {k} – run the previous steps")
+    frame = _decode_image(image_b64)
+    board_img, _ = warp_board(frame, _corners)
+    labels = auto_label(STATE["empty"], board_img, STATE["protoW"], STATE["protoB"])
+    _, png = cv.imencode(".png", board_img)
+    return {"labels": labels, "warp_png": base64.b64encode(png).decode()}
+
+@app.post("/save-sample")
+async def save_sample(payload: dict = Body(...)):
+    labels = payload.get("labels")
+    image_b64 = payload.get("image_b64")
+    if not labels or not image_b64:
+        raise HTTPException(400, "Need labels and image_b64")
+
+    sess = Path("data") / f"session_{int(cv.getTickCount())}"
+    (sess / "samples").mkdir(parents=True, exist_ok=True)
+
+    # You sent the WARP (800x800 PNG) from the browser — don't re-warp it!
+    img = _decode_image(image_b64)       # this is already the top-down board
+    img_path = sess / "samples" / f"img_{len(list((sess/'samples').glob('img_*.png')))+1:04d}.png"
+    cv.imwrite(str(img_path), img)
+
+    (sess/"corners.npy").write_bytes(np.array(_corners, dtype=np.float32).tobytes())
+    (sess/"samples"/f"labels_{img_path.stem.split('_')[-1]}.json").write_text(
+        json.dumps({"image": img_path.name, "grid_size": 8, "labels": labels}, indent=2)
+    )
+    return {"ok": True, "saved": str(img_path)}
 
 
 app.mount("/", StaticFiles(directory="static", html=True), name="static")

@@ -2,41 +2,76 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Phone Chess Tracker (PoC)</title>
 
-  <!--  chessboard.js + deps  -->
-  <!-- <link rel="stylesheet"
-        href="https://cdnjs.cloudflare.com/ajax/libs/chessboard-js/1.0.0/chessboard-1.0.0.min.css">
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.6.4/jquery.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/chessboard-js/1.0.0/chessboard-1.0.0.min.js"></script> -->
-
+  <!-- chessboard.js (served locally in /chessboardjs-1.0.0) -->
   <link rel="stylesheet" href="/chessboardjs-1.0.0/css/chessboard-1.0.0.min.css">
   <script src="/chessboardjs-1.0.0/js/jquery‑3.7.1.min.js"></script>
   <script src="/chessboardjs-1.0.0/js/chessboard-1.0.0.min.js"></script>
 
   <style>
-    body  {font-family:sans-serif;margin:0;display:flex;flex-direction:column;align-items:center}
+    body{font-family:sans-serif;margin:0;display:flex;flex-direction:column;align-items:center;padding:10px}
     #board{width:400px;margin-top:12px}
-    #status{margin-top:8px;color:#444}
-    #cam  {display:block}               /* set to block if you want a preview */
-    #history{white-space:pre-wrap;margin-top:8px}
+    #status{margin-top:8px;color:#444;text-align:center}
+    #cam{display:block;max-width:100%;width:420px;background:#000}
+    #controls{display:flex;flex-wrap:wrap;gap:8px;margin:10px 0}
+    button{padding:8px 12px}
+    #history{white-space:pre-wrap;margin-top:8px;width:400px;max-width:100%}
+    #warp{max-width:100%;border:1px solid #ddd;margin-top:8px}
+    #grid{margin-top:8px}
+    #grid button{width:40px;height:40px}
   </style>
 </head>
 
 <body>
   <h2>Phone Chess Tracker (PoC)</h2>
+
   <video id="cam" autoplay muted playsinline></video>
-  <button id="calib">Calibrate board</button>
+
+  <div id="controls">
+    <button id="enableCam">Enable camera</button>
+    <button id="calib" disabled>Calibrate board</button>
+    <button id="btnEmpty" disabled>Capture empty</button>
+    <button id="btnTeachW" disabled>Teach white</button>
+    <button id="btnTeachB" disabled>Teach black</button>
+    <button id="btnSample" disabled>Capture sample</button>
+  </div>
+
+  <canvas id="warp" width="800" height="800" style="display:none"></canvas>
+  <div id="grid" style="display:none"></div>
+
   <div id="board"></div>
   <div id="status">Waiting for camera …</div>
   <pre id="history"></pre>
 
   <script>
-  /* -------------------- helpers -------------------- */
-  const statusEl = document.getElementById('status');
-  const videoEl  = document.getElementById('cam');
+  // ---------- elements ----------
+  const statusEl  = document.getElementById('status');
+  const videoEl   = document.getElementById('cam');
   const historyEl = document.getElementById('history');
-  const calibBtn  = document.getElementById('calib');
 
+  const enableBtn = document.getElementById('enableCam');
+  const calibBtn  = document.getElementById('calib');
+  const btnEmpty  = document.getElementById('btnEmpty');
+  const btnTeachW = document.getElementById('btnTeachW');
+  const btnTeachB = document.getElementById('btnTeachB');
+  const btnSample = document.getElementById('btnSample');
+  const warpCanvas= document.getElementById('warp');
+  const gridDiv   = document.getElementById('grid');
+
+  // ---------- chessboard.js ----------
+  const board = Chessboard('board', {
+    position   : 'start',
+    draggable  : false,
+    pieceTheme : '/chessboardjs-1.0.0/img/chesspieces/wikipedia/{piece}.png'
+  });
+
+  // ---------- state ----------
+  let ws, stream, track, frameTimer, step = 0;
+  let curLabels = null, curWarp = null;
+
+  // ---------- helpers ----------
   function wsURL () {
     const proto = location.protocol === 'https:' ? 'wss' : 'ws';
     return `${proto}://${location.host}/ws`;
@@ -48,43 +83,69 @@
       fr.readAsDataURL(blob);
     });
   }
+  function isSecure() {
+    return window.isSecureContext || location.protocol === 'https:' || location.hostname === 'localhost';
+  }
 
-  /* -------- fallback-friendly frame capture ---------- */
+  // fallback-friendly frame capture
   async function grabFrame (videoTrack, canvas) {
-    // First choice: ImageCapture.grabFrame (fast, Chrome / Edge)
     if ('ImageCapture' in window) {
       try {
         const cap = new ImageCapture(videoTrack);
         if (cap.grabFrame) return cap.grabFrame();  // ImageBitmap
-      } catch { /* fall through to canvas */ }
+      } catch { /* fallback */ }
     }
-    // Fallback: draw current <video> frame to off-screen canvas
-    canvas   = canvas || (grabFrame._c   ||= document.createElement('canvas'));
+    canvas = canvas || (grabFrame._c ||= document.createElement('canvas'));
     const ctx = canvas.getContext('2d');
     canvas.width  = videoEl.videoWidth  || 640;
     canvas.height = videoEl.videoHeight || 480;
     ctx.drawImage(videoEl, 0, 0, canvas.width, canvas.height);
-    return new Promise(r => canvas.toBlob(r, 'image/jpeg', 0.8)); // returns Blob
+    return new Promise(r => canvas.toBlob(r, 'image/jpeg', 0.8)); // Blob
   }
+
   async function frameToBlob (frame) {
-    if (frame instanceof Blob) return frame;        // came from canvas path
-    if (frame.convertToBlob)      return frame.convertToBlob(); // ImageBitmap
-    // Older browsers: draw to temp canvas again
+    if (frame instanceof Blob) return frame;
+    if (frame && frame.convertToBlob) return frame.convertToBlob();
     const c = document.createElement('canvas');
     c.width = frame.width; c.height = frame.height;
     c.getContext('2d').drawImage(frame,0,0);
     return new Promise(r => c.toBlob(r,'image/jpeg',0.8));
   }
 
-  /* ------------------- chessboard.js ---------------- */
-  const board = Chessboard('board', {
-    position   : 'start',
-    draggable  : false,
-    pieceTheme : '/chessboardjs-1.0.0/img/chesspieces/wikipedia/{piece}.png'
-  });
+  async function requestCamera() {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      statusEl.textContent = 'Camera API not supported in this browser.';
+      return;
+    }
+    if (!isSecure()) {
+      statusEl.textContent = 'Open this page over HTTPS (or localhost). Mobile browsers block camera on HTTP.';
+      console.log('Not a secure context:', location.href);
+      return;
+    }
+    try {
+      const constraints = { video: { facingMode: { ideal: 'environment' } }, audio: false };
+      stream = await navigator.mediaDevices.getUserMedia(constraints);
+      videoEl.srcObject = stream;
 
-  /* -------------------- main flow ------------------- */
-  let ws, stream, track, frameTimer, step = 0;
+      await new Promise(res => {
+        if (videoEl.readyState >= 2) return res();
+        videoEl.onloadeddata = res;
+      });
+
+      track = stream.getVideoTracks()[0];
+      statusEl.textContent = 'Camera ready. Point at the board.';
+      calibBtn.disabled = false;
+    } catch (err) {
+      statusEl.textContent = `Camera error: ${err.name} – ${err.message}`;
+      console.error(err);
+    }
+  }
+
+  async function ensureCamera() {
+    if (track) return true;
+    await requestCamera();
+    return !!track;
+  }
 
   async function startWS () {
     ws = new WebSocket(wsURL());
@@ -93,13 +154,13 @@
     ws.onerror   = e  => console.error('WS error', e);
     ws.onmessage = ({data}) => {
       const msg = JSON.parse(data);
-      if (msg.move) board.move(msg.move);        // animate move
+      if (msg.move) board.move(msg.move);
       if (msg.history) historyEl.textContent = msg.history.join(' ');
       if (msg.err)  statusEl.textContent = msg.err;
     };
 
     frameTimer = setInterval(async () => {
-      if (ws.readyState !== 1) return;           // skip unless OPEN
+      if (ws.readyState !== 1 || !track) return;
       try {
         const fr   = await grabFrame(track);
         const blob = await frameToBlob(fr);
@@ -108,16 +169,17 @@
       } catch (e) {
         console.error('frame error', e);
       }
-    }, 1000);                                    // 1 FPS (adjust to taste)
+    }, 1000);  // 1 FPS (adjust)
   }
 
   async function calibrate () {
+    if (!(await ensureCamera())) return;
     const fr   = await grabFrame(track);
     const blob = await frameToBlob(fr);
     const b64  = await blobToB64(blob);
     if (step === 0) {
       statusEl.textContent = 'Calibrating…';
-      const res = await fetch('/calibrate', {method:'POST', body:b64});
+      const res = await fetch('/calibrate', { method:'POST', body:b64 });
       if (!res.ok) {
         statusEl.textContent = 'Calibration failed – show the whole board & retry';
         return;
@@ -125,33 +187,87 @@
       step = 1;
       statusEl.textContent = 'Corners found. Set up the board and press again.';
       calibBtn.textContent = 'Start tracking';
+      btnEmpty.disabled = false;  // allow capture of empty reference
     } else {
       calibBtn.disabled = true;
       startWS();
     }
   }
 
+  async function postB64(url){
+    if (!(await ensureCamera())) throw new Error('No camera');
+    const fr = await grabFrame(track);
+    const blob = await frameToBlob(fr);
+    const b64  = await blobToB64(blob);
+    const res  = await fetch(url, {method:'POST', body:b64});
+    if(!res.ok) throw new Error(await res.text());
+    return res.json();
+  }
+
+  function renderGrid(){
+    gridDiv.innerHTML = '';
+    gridDiv.style.display = 'grid';
+    gridDiv.style.gridTemplateColumns = 'repeat(8, 40px)';
+    gridDiv.style.gap = '2px';
+    curLabels.forEach((lab,i)=>{
+      const cell = document.createElement('button');
+      cell.textContent = lab;
+      cell.onclick = ()=>{
+        const order = ['E','W','B'];
+        cell.textContent = curLabels[i] = order[(order.indexOf(curLabels[i])+1)%3];
+      };
+      gridDiv.appendChild(cell);
+    });
+    const save = document.createElement('button');
+    save.textContent = 'Save sample';
+    save.style.gridColumn = 'span 8';
+    save.onclick = async ()=>{
+      const res = await fetch('/save-sample', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({labels: curLabels, image_b64: curWarp})
+      });
+      statusEl.textContent = res.ok ? 'Saved sample.' : 'Save failed.';
+    };
+    gridDiv.appendChild(save);
+  }
+
+  // ---------- wire up UI ----------
+  enableBtn.addEventListener('click', requestCamera);
   calibBtn.addEventListener('click', calibrate);
 
-  (async function init () {
-    try {
-      /* camera ----------------------------------------------------------- */
-      stream = await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}});
-      videoEl.srcObject = stream;
+  btnEmpty.onclick = async ()=>{
+    await postB64('/capture-empty');
+    statusEl.textContent = 'Empty captured. Teach colors.';
+    btnTeachW.disabled = btnTeachB.disabled = false;
+  };
 
-      await new Promise(res => {
-        if (videoEl.readyState >= 2) return res();        // HAVE_CURRENT_DATA
-        videoEl.onloadeddata = res;                       // fires when first frame arrives
-      });
+  btnTeachW.onclick = ()=> postB64('/teach-color/white').then(()=> {
+    statusEl.textContent='White learned.';
+  });
 
-      track = stream.getVideoTracks()[0];
-      statusEl.textContent = 'Point camera at empty board and press \"Calibrate board\"';
-      calibBtn.disabled = false;
-    } catch (err) {
-      console.error(err);
-      statusEl.textContent = 'Camera access failed: ' + err.message;
-    }
-  })();
+  btnTeachB.onclick = ()=> postB64('/teach-color/black').then(()=> {
+    statusEl.textContent='Black learned. Ready to label!';
+    btnSample.disabled = false;
+  });
+
+  btnSample.onclick = async ()=>{
+    const {labels, warp_png} = await postB64('/propose-labels');
+    curLabels = labels; curWarp = warp_png;
+    const img = new Image();
+    img.onload = ()=>{
+      const ctx = warpCanvas.getContext('2d');
+      ctx.clearRect(0,0,800,800);
+      ctx.drawImage(img,0,0,800,800);
+      warpCanvas.style.display = 'block';
+      renderGrid();
+    };
+    img.src = 'data:image/png;base64,'+curWarp;
+  };
+
+  // ---------- startup hint ----------
+  if (!isSecure()) {
+    statusEl.textContent = 'Tip: open this over HTTPS (ngrok/cloudflared) or localhost so the camera prompt appears.';
+  }
   </script>
 </body>
 </html>
