@@ -11,6 +11,7 @@ from fastapi.staticfiles import StaticFiles
 import json, os
 from pathlib import Path
 from autolabel import learn_proto, auto_label
+import time
 
 
 app = FastAPI()
@@ -41,6 +42,7 @@ def _decode_image(data_url: str) -> np.ndarray:
 # HTTP endpoint – one‑shot board calibration
 # ---------------------------------------------------------------------------
 
+
 @app.post("/calibrate")
 async def calibrate(image_b64: str = Body(..., media_type="text/plain")):
     global _corners
@@ -49,9 +51,16 @@ async def calibrate(image_b64: str = Body(..., media_type="text/plain")):
     if corners is None:
         cv.imwrite("calib_dbg_fail.jpg", frame)
         raise HTTPException(400, "Board not found")
+
     cv.imwrite("calib_dbg_ok.jpg", draw_board_overlay(frame, corners))
     _corners = corners
-    return {"ok": True}
+
+    # NEW: every calibration -> new session folder
+    sd = _start_new_session()
+    # save corners for provenance
+    np.save(sd / "corners.npy", np.array(_corners, dtype=np.float32))
+    return {"ok": True, "session": str(sd)}
+
 
 
 # ---------------------------------------------------------------------------
@@ -103,7 +112,17 @@ async def ws_endpoint(ws: WebSocket):
 
 
 
-STATE = {"H": None, "empty": None, "protoW": None, "protoB": None}
+STATE = {"H": None, "empty": None, "protoW": None, "protoB": None, "session_dir": None, "nW": 0, "nB": 0}
+
+def _start_new_session():
+    ts = int(time.time())
+    sd = Path("data") / f"session_{ts}"
+    (sd / "samples").mkdir(parents=True, exist_ok=True)
+    STATE["session_dir"] = sd
+    return sd
+
+def _ensure_session_dir():
+    return STATE["session_dir"] or _start_new_session()
 
 @app.post("/capture-empty")
 async def capture_empty(image_b64: str = Body(..., media_type="text/plain")):
@@ -112,8 +131,31 @@ async def capture_empty(image_b64: str = Body(..., media_type="text/plain")):
     frame = _decode_image(image_b64)
     board_img, _ = warp_board(frame, _corners)
     STATE["empty"] = board_img
-    cv.imwrite("empty.png", board_img)
+    sd = _ensure_session_dir()
+    cv.imwrite(str(sd / "empty.png"), board_img)
     return {"ok": True}
+
+
+# @app.post("/teach-color/{which}")
+# async def teach_color(which: str, image_b64: str = Body(..., media_type="text/plain")):
+#     if STATE["empty"] is None:
+#         raise HTTPException(400, "Capture empty first")
+#     frame = _decode_image(image_b64)
+#     board_img, _ = warp_board(frame, _corners)
+#     proto = learn_proto(STATE["empty"], board_img)
+#     if which.lower() == "white":
+#         STATE["protoW"] = proto
+#     else:
+#         STATE["protoB"] = proto
+#     return {"ok": True}
+
+
+
+def _ema(old, new, n, alpha=0.3):
+    """Exponential moving average; if no old value, return new."""
+    if old is None or n == 0:
+        return new.astype(np.float32)
+    return ((1 - alpha) * old + alpha * new).astype(np.float32)
 
 @app.post("/teach-color/{which}")
 async def teach_color(which: str, image_b64: str = Body(..., media_type="text/plain")):
@@ -121,12 +163,17 @@ async def teach_color(which: str, image_b64: str = Body(..., media_type="text/pl
         raise HTTPException(400, "Capture empty first")
     frame = _decode_image(image_b64)
     board_img, _ = warp_board(frame, _corners)
-    proto = learn_proto(STATE["empty"], board_img)
+    feat = learn_proto(STATE["empty"], board_img).astype(np.float32)
+
     if which.lower() == "white":
-        STATE["protoW"] = proto
+        STATE["protoW"] = _ema(STATE["protoW"], feat, STATE["nW"], alpha=0.35)
+        STATE["nW"] += 1
+        return {"ok": True, "n_white": STATE["nW"]}
     else:
-        STATE["protoB"] = proto
-    return {"ok": True}
+        STATE["protoB"] = _ema(STATE["protoB"], feat, STATE["nB"], alpha=0.35)
+        STATE["nB"] += 1
+        return {"ok": True, "n_black": STATE["nB"]}
+
 
 @app.post("/propose-labels")
 async def propose_labels(image_b64: str = Body(..., media_type="text/plain")):
@@ -146,19 +193,24 @@ async def save_sample(payload: dict = Body(...)):
     if not labels or not image_b64:
         raise HTTPException(400, "Need labels and image_b64")
 
-    sess = Path("data") / f"session_{int(cv.getTickCount())}"
-    (sess / "samples").mkdir(parents=True, exist_ok=True)
+    sd = _ensure_session_dir()  # <- reuse unless recalibrated
+    samples_dir = sd / "samples"
+    samples_dir.mkdir(parents=True, exist_ok=True)
 
-    # You sent the WARP (800x800 PNG) from the browser — don't re-warp it!
-    img = _decode_image(image_b64)       # this is already the top-down board
-    img_path = sess / "samples" / f"img_{len(list((sess/'samples').glob('img_*.png')))+1:04d}.png"
+    # browser sends the 800x800 warp; do NOT re-warp
+    img = _decode_image(image_b64)
+    next_idx = len(list(samples_dir.glob("img_*.png"))) + 1
+    img_path = samples_dir / f"img_{next_idx:04d}.png"
     cv.imwrite(str(img_path), img)
 
-    (sess/"corners.npy").write_bytes(np.array(_corners, dtype=np.float32).tobytes())
-    (sess/"samples"/f"labels_{img_path.stem.split('_')[-1]}.json").write_text(
+    # keep corners in the session root (overwrite with latest if needed)
+    np.save(sd / "corners.npy", np.array(_corners, dtype=np.float32))
+
+    (samples_dir / f"labels_{next_idx:04d}.json").write_text(
         json.dumps({"image": img_path.name, "grid_size": 8, "labels": labels}, indent=2)
     )
-    return {"ok": True, "saved": str(img_path)}
+    return {"ok": True, "saved": str(img_path), "session": str(sd)}
+
 
 
 app.mount("/", StaticFiles(directory="static", html=True), name="static")
