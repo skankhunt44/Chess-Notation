@@ -10,6 +10,8 @@ import torch
 import torch.nn as nn
 from torchvision import models, transforms
 
+import os
+
 """vision.py – camera‑side utilities
 -------------------------------------
 •  Calibrate the chessboard once per session (detect 4 corners)
@@ -37,6 +39,21 @@ _KERNEL = cv.getStructuringElement(cv.MORPH_ELLIPSE, (3, 3))
 
 # Lazy loaded CNN model
 _CNN_MODEL = None
+
+
+# Keep CPU threads modest to avoid oversubscription
+try:
+    torch.set_num_threads(int(os.getenv("TORCH_NUM_THREADS", "2")))
+    torch.set_num_interop_threads(1)
+except Exception:
+    pass
+
+def _get_device():
+    # Prefer MPS on Apple, then CUDA, else CPU
+    if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+        return torch.device("mps")
+    return torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
 
 
 # ---------------------------------------------------------------------------
@@ -110,13 +127,34 @@ def occupancy_hsv(board_img: np.ndarray) -> np.ndarray:
     return occ
 
 
+# def _load_cnn_model(device=None) -> nn.Module:
+#     """Lazy-load the CNN piece classifier."""
+#     global _CNN_MODEL
+#     if '_CNN_MODEL' in globals() and _CNN_MODEL is not None:
+#         return _CNN_MODEL
+
+#     device = device or ('cuda' if torch.cuda.is_available() else 'cpu')
+
+#     def build_model(num_classes: int = 3) -> nn.Module:
+#         m = models.mobilenet_v2(weights=models.MobileNet_V2_Weights.IMAGENET1K_V1)
+#         m.classifier[1] = nn.Linear(m.classifier[1].in_features, num_classes)
+#         return m
+
+#     model = build_model()
+#     state = torch.load('assets/model.pt', map_location=device)
+#     model.load_state_dict(state)
+#     model.to(device)
+#     model.eval()
+#     _CNN_MODEL = model
+#     return model
+
+
 def _load_cnn_model(device=None) -> nn.Module:
-    """Lazy-load the CNN piece classifier."""
     global _CNN_MODEL
-    if '_CNN_MODEL' in globals() and _CNN_MODEL is not None:
+    if _CNN_MODEL is not None:
         return _CNN_MODEL
 
-    device = device or ('cuda' if torch.cuda.is_available() else 'cpu')
+    device = device or _get_device()
 
     def build_model(num_classes: int = 3) -> nn.Module:
         m = models.mobilenet_v2(weights=models.MobileNet_V2_Weights.IMAGENET1K_V1)

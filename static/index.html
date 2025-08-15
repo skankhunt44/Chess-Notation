@@ -7,7 +7,7 @@
 
   <!-- chessboard.js (served locally in /chessboardjs-1.0.0) -->
   <link rel="stylesheet" href="/chessboardjs-1.0.0/css/chessboard-1.0.0.min.css">
-  <script src="/chessboardjs-1.0.0/js/jquery‑3.7.1.min.js"></script>
+  <script src="/chessboardjs-1.0.0/js/jquery-3.7.1.min.js"></script>
   <script src="/chessboardjs-1.0.0/js/chessboard-1.0.0.min.js"></script>
 
   <style>
@@ -68,8 +68,15 @@
   });
 
   // ---------- state ----------
-  let ws, stream, track, frameTimer, step = 0;
+  let ws, stream, track, step = 0;
   let curLabels = null, curWarp = null;
+
+  // Backpressure-aware sender state
+  let inFlight = false;
+  let pendingBlob = null;
+  const TARGET_FPS = 6;                       // tune 3–10 based on server speed
+  const MIN_SEND_MS = 1000 / TARGET_FPS;
+  let lastSentAt = 0;
 
   // ---------- helpers ----------
   function wsURL () {
@@ -87,20 +94,24 @@
     return window.isSecureContext || location.protocol === 'https:' || location.hostname === 'localhost';
   }
 
-  // fallback-friendly frame capture
+  // capture frame (downscale + compress)
   async function grabFrame (videoTrack, canvas) {
     if ('ImageCapture' in window) {
       try {
         const cap = new ImageCapture(videoTrack);
-        if (cap.grabFrame) return cap.grabFrame();  // ImageBitmap
+        if (cap.grabFrame) return cap.grabFrame();  // ImageBitmap at native res
       } catch { /* fallback */ }
     }
     canvas = canvas || (grabFrame._c ||= document.createElement('canvas'));
-    const ctx = canvas.getContext('2d');
-    canvas.width  = videoEl.videoWidth  || 640;
-    canvas.height = videoEl.videoHeight || 480;
+    const srcW = videoEl.videoWidth  || 640;
+    const srcH = videoEl.videoHeight || 480;
+    const MAX_W = 960;                        // cap width to reduce payload size
+    const scale = Math.min(1, MAX_W / srcW);
+    canvas.width  = Math.round(srcW * scale);
+    canvas.height = Math.round(srcH * scale);
+    const ctx = canvas.getContext('2d', { willReadFrequently: false });
     ctx.drawImage(videoEl, 0, 0, canvas.width, canvas.height);
-    return new Promise(r => canvas.toBlob(r, 'image/jpeg', 0.8)); // Blob
+    return new Promise(r => canvas.toBlob(r, 'image/jpeg', 0.65));
   }
 
   async function frameToBlob (frame) {
@@ -109,7 +120,7 @@
     const c = document.createElement('canvas');
     c.width = frame.width; c.height = frame.height;
     c.getContext('2d').drawImage(frame,0,0);
-    return new Promise(r => c.toBlob(r,'image/jpeg',0.8));
+    return new Promise(r => c.toBlob(r,'image/jpeg',0.65));
   }
 
   async function requestCamera() {
@@ -119,7 +130,6 @@
     }
     if (!isSecure()) {
       statusEl.textContent = 'Open this page over HTTPS (or localhost). Mobile browsers block camera on HTTP.';
-      console.log('Not a secure context:', location.href);
       return;
     }
     try {
@@ -147,29 +157,59 @@
     return !!track;
   }
 
+  // --- Backpressure-aware sender (keeps only the newest frame; 1 in-flight) ---
+  async function refreshPending() {
+    if (!track) return;
+    const fr   = await grabFrame(track);
+    const blob = await frameToBlob(fr);
+    pendingBlob = blob;               // overwrite older pending frame
+  }
+
+  function pump() {
+    if (!ws || ws.readyState !== 1 || !track) return;
+    const now = performance.now();
+
+    // refresh the pending frame opportunistically
+    refreshPending().then(() => {
+      if (!inFlight && pendingBlob && (now - lastSentAt) >= MIN_SEND_MS) {
+        inFlight = true;
+        lastSentAt = performance.now();
+
+        // still using base64 text frames
+        blobToB64(pendingBlob).then(b64 => {
+          pendingBlob = null;
+          try { ws.send(b64); } catch {}
+        });
+      }
+      requestAnimationFrame(pump);
+    });
+  }
+
   async function startWS () {
     ws = new WebSocket(wsURL());
-    ws.onopen    = () => statusEl.textContent = 'Connected – tracking moves.';
-    ws.onclose   = () => statusEl.textContent = 'WebSocket closed';
-    ws.onerror   = e  => console.error('WS error', e);
+    ws.onopen  = () => { 
+      statusEl.textContent = 'Connected – tracking moves.';
+      inFlight = false; pendingBlob = null; lastSentAt = 0;
+      pump();
+    };
+    ws.onclose = (e) => {
+      statusEl.textContent = `WebSocket closed (code ${e.code})`;
+      console.log('WS close', e.code, e.reason);
+    };
+    ws.onerror = (e) => console.error('WS error', e);
     ws.onmessage = ({data}) => {
       const msg = JSON.parse(data);
+      if (msg.type === 'ping') return;  // ignore server heartbeat
+
+      if (msg.ms !== undefined) {
+        statusEl.textContent = `Proc ${msg.ms} ms`;
+      }
       if (msg.move) board.move(msg.move);
       if (msg.history) historyEl.textContent = msg.history.join(' ');
       if (msg.err)  statusEl.textContent = msg.err;
-    };
 
-    frameTimer = setInterval(async () => {
-      if (ws.readyState !== 1 || !track) return;
-      try {
-        const fr   = await grabFrame(track);
-        const blob = await frameToBlob(fr);
-        const b64  = await blobToB64(blob);
-        ws.send(b64);
-      } catch (e) {
-        console.error('frame error', e);
-      }
-    }, 1000);  // 1 FPS (adjust)
+      inFlight = false;                 // ACK: allow next frame
+    };
   }
 
   async function calibrate () {
@@ -187,7 +227,7 @@
       step = 1;
       statusEl.textContent = 'Corners found. Set up the board and press again.';
       calibBtn.textContent = 'Start tracking';
-      btnEmpty.disabled = false;  // allow capture of empty reference
+      btnEmpty.disabled = false;
     } else {
       calibBtn.disabled = true;
       startWS();
@@ -232,7 +272,7 @@
   }
 
   // ---------- wire up UI ----------
-  enableBtn.addEventListener('click', requestCamera);
+  document.getElementById('enableCam').addEventListener('click', requestCamera);
   calibBtn.addEventListener('click', calibrate);
 
   btnEmpty.onclick = async ()=>{

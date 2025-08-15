@@ -1,36 +1,56 @@
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Body
+from __future__ import annotations
+
 import base64
+import json
+import os
+import time
+from pathlib import Path
+from typing import Optional
+
 import cv2 as cv
 import numpy as np
+from fastapi import Body, FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi.staticfiles import StaticFiles
+from starlette.concurrency import run_in_threadpool
 
 from vision import find_board, warp_board, occupancy_cnn, draw_board_overlay, ascii_occ
 from tracker import SquareTracker
-
-from fastapi.staticfiles import StaticFiles
-
-import json, os
-from pathlib import Path
 from autolabel import learn_proto, auto_label
-import time
 
-import asyncio, time, os
-from starlette.concurrency import run_in_threadpool
+# --------------------------------------------------------------------------------------
+# App & globals
+# --------------------------------------------------------------------------------------
 
 app = FastAPI()
-# move to the end of the file
-# app.mount("/", StaticFiles(directory="static", html=True), name="static")
-
 tracker = SquareTracker()
 
-# Will hold the calibrated 4×2 corner array after /calibrate runs.
-_corners: np.ndarray | None = None
+# Calibrated 4x2 corner array (np.ndarray with dtype float32), set by /calibrate
+_corners: Optional[np.ndarray] = None
 
-# ---------------------------------------------------------------------------
-# Utility – base64‑>numpy image
-# ---------------------------------------------------------------------------
+STATE = {
+    "H": None,
+    "empty": None,
+    "protoW": None,
+    "protoB": None,
+    "session_dir": None,
+    "nW": 0,
+    "nB": 0,
+}
+
+# Debug dump rate limiter
+_last_dump = 0.0
+DEBUG_DUMP_EVERY_S = 2.0
+
+# WS config
+RECEIVE_TIMEOUT_S = 60
+HEARTBEAT_EVERY_S = 25
+
+# --------------------------------------------------------------------------------------
+# Helpers
+# --------------------------------------------------------------------------------------
 
 def _decode_image(data_url: str) -> np.ndarray:
-    """Decode a data‑URL or raw base64 string to a BGR (OpenCV) image."""
+    """Decode a data-URL or raw base64 string to a BGR (OpenCV) image."""
     if "," in data_url:  # strip leading "data:image/jpeg;base64," etc.
         data_url = data_url.split(",", 1)[1]
     buf = base64.b64decode(data_url)
@@ -40,10 +60,28 @@ def _decode_image(data_url: str) -> np.ndarray:
         raise ValueError("Could not decode image")
     return img
 
-# ---------------------------------------------------------------------------
-# HTTP endpoint – one‑shot board calibration
-# ---------------------------------------------------------------------------
 
+def _start_new_session() -> Path:
+    ts = int(time.time())
+    sd = Path("data") / f"session_{ts}"
+    (sd / "samples").mkdir(parents=True, exist_ok=True)
+    STATE["session_dir"] = sd
+    return sd
+
+
+def _ensure_session_dir() -> Path:
+    return STATE["session_dir"] or _start_new_session()
+
+
+def _ema(old: Optional[np.ndarray], new: np.ndarray, n: int, alpha: float = 0.3) -> np.ndarray:
+    """Exponential moving average; if no old value, return new."""
+    if old is None or n == 0:
+        return new.astype(np.float32)
+    return ((1 - alpha) * old + alpha * new).astype(np.float32)
+
+# --------------------------------------------------------------------------------------
+# HTTP endpoints
+# --------------------------------------------------------------------------------------
 
 @app.post("/calibrate")
 async def calibrate(image_b64: str = Body(..., media_type="text/plain")):
@@ -57,154 +95,16 @@ async def calibrate(image_b64: str = Body(..., media_type="text/plain")):
     cv.imwrite("calib_dbg_ok.jpg", draw_board_overlay(frame, corners))
     _corners = corners
 
-    # NEW: every calibration -> new session folder
     sd = _start_new_session()
-    # save corners for provenance
     np.save(sd / "corners.npy", np.array(_corners, dtype=np.float32))
     return {"ok": True, "session": str(sd)}
 
-
-
-# ---------------------------------------------------------------------------
-# HTTP endpoint – current move history
-# ---------------------------------------------------------------------------
 
 @app.get("/history")
 async def get_history():
     """Return the list of moves seen so far in SAN."""
     return {"moves": tracker.get_history()}
 
-# ---------------------------------------------------------------------------
-# WebSocket – streaming frames → moves / FEN
-# ---------------------------------------------------------------------------
-
-# @app.websocket("/ws")
-# async def ws_endpoint(ws: WebSocket):
-#     await ws.accept()
-#     try:
-#         while True:
-#             data = await ws.receive_text()
-#             try:
-#                 frame = _decode_image(data)
-#             except ValueError:
-#                 await ws.send_json({"err": "Bad image data"})
-#                 continue
-
-#             if _corners is None:
-#                 await ws.send_json({"err": "Not calibrated"})
-#                 continue
-
-#             # cv.imwrite("calib_ok.jpg", frame) # the raw camera frame
-#             board_img, _ = warp_board(frame, _corners)
-
-#             # cv.imwrite("calib_warp.jpg", board_img) # the rectified 800 × 800 board
-#             occ = occupancy_cnn(board_img)
-
-#             print(ascii_occ(occ))
-            
-#             move, fen = tracker.update(occ)
-
-#             if move:
-#                 await ws.send_json({"move": move, "fen": fen, "history": tracker.get_history()})
-#             else:
-#                 await ws.send_json({"noop": True})
-#     except WebSocketDisconnect:
-#         # Normal disconnect; nothing special to clean up for now.
-#         pass
-
-
-RECEIVE_TIMEOUT_S = 60
-HEARTBEAT_EVERY_S = 25
-DEBUG_DUMP_EVERY_S = 2.0
-_last_dump = 0.0
-
-@app.websocket("/ws")
-async def ws_endpoint(ws: WebSocket):
-    await ws.accept()
-
-    async def keepalive():
-        # App-level heartbeat message so proxies don't think we're idle.
-        while True:
-            await asyncio.sleep(HEARTBEAT_EVERY_S)
-            try:
-                await ws.send_json({"type": "ping", "t": time.time()})
-            except Exception:
-                break  # socket likely gone
-
-    ka_task = asyncio.create_task(keepalive())
-
-    try:
-        while True:
-            # If the client stops talking, time out instead of hanging forever.
-            try:
-                data = await asyncio.wait_for(ws.receive_text(), timeout=RECEIVE_TIMEOUT_S)
-            except asyncio.TimeoutError:
-                await ws.close(code=1001)  # going away
-                break
-
-            # Optionally ignore explicit heartbeat/pong from client
-            if data.strip() in ("PING", '{"type":"pong"}'):
-                continue
-
-            # Decode
-            try:
-                frame = _decode_image(data)
-            except ValueError:
-                await ws.send_json({"err": "Bad image data"})
-                continue
-
-            if _corners is None:
-                await ws.send_json({"err": "Not calibrated"})
-                continue
-
-            # Heavy work (warp + CNN) in a thread so we don't block the event loop
-            def _process():
-                board_img, _ = warp_board(frame, _corners)
-                occ = occupancy_cnn(board_img)  # ensure this uses no_grad/inference_mode internally
-
-                print(ascii_occ(occ))
-                
-                move, fen = tracker.update(occ)
-
-                # Rate-limited debug dumps
-                global _last_dump
-                now = time.time()
-                if os.getenv("DEBUG_WARP") == "1" and (now - _last_dump) > DEBUG_DUMP_EVERY_S:
-                    cv.imwrite("calib_ok.jpg", frame)
-                    cv.imwrite("calib_warp.jpg", board_img)
-                    _last_dump = now
-                return move, fen
-
-            try:
-                move, fen = await run_in_threadpool(_process)
-            except Exception as e:
-                # Catch-all so a single bad frame doesn't kill the socket
-                await ws.send_json({"err": f"server error: {type(e).__name__}"})
-                continue
-
-            if move:
-                await ws.send_json({"move": move, "fen": fen, "history": tracker.get_history()})
-            else:
-                await ws.send_json({"noop": True})
-
-    except WebSocketDisconnect:
-        pass
-    finally:
-        ka_task.cancel()
-
-
-
-STATE = {"H": None, "empty": None, "protoW": None, "protoB": None, "session_dir": None, "nW": 0, "nB": 0}
-
-def _start_new_session():
-    ts = int(time.time())
-    sd = Path("data") / f"session_{ts}"
-    (sd / "samples").mkdir(parents=True, exist_ok=True)
-    STATE["session_dir"] = sd
-    return sd
-
-def _ensure_session_dir():
-    return STATE["session_dir"] or _start_new_session()
 
 @app.post("/capture-empty")
 async def capture_empty(image_b64: str = Body(..., media_type="text/plain")):
@@ -217,27 +117,6 @@ async def capture_empty(image_b64: str = Body(..., media_type="text/plain")):
     cv.imwrite(str(sd / "empty.png"), board_img)
     return {"ok": True}
 
-
-# @app.post("/teach-color/{which}")
-# async def teach_color(which: str, image_b64: str = Body(..., media_type="text/plain")):
-#     if STATE["empty"] is None:
-#         raise HTTPException(400, "Capture empty first")
-#     frame = _decode_image(image_b64)
-#     board_img, _ = warp_board(frame, _corners)
-#     proto = learn_proto(STATE["empty"], board_img)
-#     if which.lower() == "white":
-#         STATE["protoW"] = proto
-#     else:
-#         STATE["protoB"] = proto
-#     return {"ok": True}
-
-
-
-def _ema(old, new, n, alpha=0.3):
-    """Exponential moving average; if no old value, return new."""
-    if old is None or n == 0:
-        return new.astype(np.float32)
-    return ((1 - alpha) * old + alpha * new).astype(np.float32)
 
 @app.post("/teach-color/{which}")
 async def teach_color(which: str, image_b64: str = Body(..., media_type="text/plain")):
@@ -259,7 +138,7 @@ async def teach_color(which: str, image_b64: str = Body(..., media_type="text/pl
 
 @app.post("/propose-labels")
 async def propose_labels(image_b64: str = Body(..., media_type="text/plain")):
-    for k in ("empty","protoW","protoB"):
+    for k in ("empty", "protoW", "protoB"):
         if STATE[k] is None:
             raise HTTPException(400, f"Missing {k} – run the previous steps")
     frame = _decode_image(image_b64)
@@ -268,6 +147,7 @@ async def propose_labels(image_b64: str = Body(..., media_type="text/plain")):
     _, png = cv.imencode(".png", board_img)
     return {"labels": labels, "warp_png": base64.b64encode(png).decode()}
 
+
 @app.post("/save-sample")
 async def save_sample(payload: dict = Body(...)):
     labels = payload.get("labels")
@@ -275,24 +155,162 @@ async def save_sample(payload: dict = Body(...)):
     if not labels or not image_b64:
         raise HTTPException(400, "Need labels and image_b64")
 
-    sd = _ensure_session_dir()  # <- reuse unless recalibrated
+    sd = _ensure_session_dir()
     samples_dir = sd / "samples"
     samples_dir.mkdir(parents=True, exist_ok=True)
 
-    # browser sends the 800x800 warp; do NOT re-warp
-    img = _decode_image(image_b64)
+    img = _decode_image(image_b64)  # browser sends 800x800 warp; do NOT re-warp
     next_idx = len(list(samples_dir.glob("img_*.png"))) + 1
     img_path = samples_dir / f"img_{next_idx:04d}.png"
     cv.imwrite(str(img_path), img)
 
-    # keep corners in the session root (overwrite with latest if needed)
-    np.save(sd / "corners.npy", np.array(_corners, dtype=np.float32))
+    np.save(sd / "corners.npy", np.array(_corners, dtype=np.float32))  # keep latest
 
     (samples_dir / f"labels_{next_idx:04d}.json").write_text(
         json.dumps({"image": img_path.name, "grid_size": 8, "labels": labels}, indent=2)
     )
     return {"ok": True, "saved": str(img_path), "session": str(sd)}
 
+# --------------------------------------------------------------------------------------
+# WebSocket – streaming frames → moves / FEN
+# --------------------------------------------------------------------------------------
 
+@app.websocket("/ws")
+async def ws_endpoint(ws: WebSocket):
+    await ws.accept()
+
+    async def keepalive():
+        # App-level heartbeat message so proxies don't think we're idle.
+        while True:
+            await asyncio.sleep(HEARTBEAT_EVERY_S)
+            try:
+                await ws.send_json({"type": "ping", "t": time.time()})
+            except Exception:
+                break  # socket likely gone
+
+    ka_task = app.state.__dict__.get("_ka_task")
+    if ka_task is None or ka_task.done():
+        ka_task = app.state._ka_task = None  # per-connection task below
+    ka_task = app.state._ka_task = None  # ensure not shared across conns
+    ka_task = app.state._ka_task = None  # (explicit reset to avoid confusion)
+    ka_task = None  # create per-connection one:
+    ka_task = __import__("asyncio").create_task(keepalive())
+
+    try:
+        while True:
+            # If the client stops talking, time out instead of hanging forever.
+            try:
+                data = await __import__("asyncio").wait_for(ws.receive_text(), timeout=RECEIVE_TIMEOUT_S)
+            except __import__("asyncio").TimeoutError:
+                await ws.close(code=1001)  # going away
+                break
+
+            # Ignore optional client heartbeat/pong
+            if data.strip() in ("PING", '{"type":"pong"}'):
+                continue
+
+            # Decode
+            try:
+                frame = _decode_image(data)
+            except ValueError:
+                await ws.send_json({"err": "Bad image data"})
+                continue
+
+            if _corners is None:
+                await ws.send_json({"err": "Not calibrated"})
+                continue
+
+            def _process():
+                t0 = time.perf_counter()
+                board_img, _ = warp_board(frame, _corners)
+                occ = occupancy_cnn(board_img)
+                move, fen = tracker.update(occ)
+                ms = int((time.perf_counter() - t0) * 1000)
+
+                # Optional: very occasional ASCII dump for debugging
+                log_every = float(os.getenv("LOG_EVERY", "1"))
+                if log_every > 0:
+                    now = time.time()
+                    if int(now / log_every) != int((now - 0.05) / log_every):
+                        print(ascii_occ(occ))
+
+                # # Rate-limited debug image dumps (enable with DEBUG_WARP=1)
+                # global _last_dump
+                # now = time.time()
+                # if os.getenv("DEBUG_WARP") == "1" and (now - _last_dump) > DEBUG_DUMP_EVERY_S:
+                #     cv.imwrite("calib_ok.jpg", frame)
+                #     cv.imwrite("calib_warp.jpg", board_img)
+                #     _last_dump = now
+
+                return move, fen, ms
+
+            # def _process():
+            #     t0 = time.perf_counter()
+
+            #     # --- Warp (and downscale the board to 640x640 to shrink model work) ---
+            #     board_img, _ = warp_board(frame, _corners)
+            #     t1 = time.perf_counter()
+            #     if board_img.shape[0] != 640:
+            #         board_img = cv.resize(board_img, (640, 640), interpolation=cv.INTER_AREA)
+            #     t2 = time.perf_counter()
+
+            #     # --- Inference ---
+            #     occ = occupancy_cnn(board_img)      # ensure this is batched & no_grad in the model code
+            #     t3 = time.perf_counter()
+
+            #     # --- Tracker update ---
+            #     move, fen = tracker.update(occ)
+            #     t4 = time.perf_counter()
+
+            #     # Optional: sparse ASCII dump
+            #     log_every = float(os.getenv("LOG_EVERY", "0"))
+            #     if log_every > 0:
+            #         now = time.time()
+            #         if int(now / log_every) != int((now - 0.05) / log_every):
+            #             print(ascii_occ(occ))
+
+            #     # Optional: rate-limited debug images (DEBUG_WARP=1)
+            #     global _last_dump
+            #     now = time.time()
+            #     if os.getenv("DEBUG_WARP") == "1" and (now - _last_dump) > DEBUG_DUMP_EVERY_S:
+            #         cv.imwrite("calib_ok.jpg", frame)
+            #         cv.imwrite("calib_warp.jpg", board_img)
+            #         _last_dump = now
+
+            #     # breakdown in ms
+            #     timing = {
+            #         "warp": int((t1 - t0) * 1000),
+            #         "resize": int((t2 - t1) * 1000),
+            #         "model": int((t3 - t2) * 1000),
+            #         "tracker": int((t4 - t3) * 1000),
+            #         "total": int((t4 - t0) * 1000),
+            #     }
+            #     return move, fen, timing
+
+
+            try:
+                move, fen, ms = await run_in_threadpool(_process)
+            except Exception as e:
+                await ws.send_json({"err": f"server error: {type(e).__name__}"})
+                continue
+
+            # payload = {"ms": timing["total"], "timing": timing}  # the client can show Proc X ms
+            payload = {"ms": ms}
+            if move:
+                payload.update({"move": move, "fen": fen, "history": tracker.get_history()})
+                print(move)
+                
+            else:
+                payload["noop"] = True
+            await ws.send_json(payload)
+
+    except WebSocketDisconnect:
+        pass
+    finally:
+        ka_task.cancel()
+
+# --------------------------------------------------------------------------------------
+# Static site
+# --------------------------------------------------------------------------------------
 
 app.mount("/", StaticFiles(directory="static", html=True), name="static")
