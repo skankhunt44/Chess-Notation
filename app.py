@@ -13,6 +13,8 @@ from pathlib import Path
 from autolabel import learn_proto, auto_label
 import time
 
+import asyncio, time, os
+from starlette.concurrency import run_in_threadpool
 
 app = FastAPI()
 # move to the end of the file
@@ -76,12 +78,75 @@ async def get_history():
 # WebSocket – streaming frames → moves / FEN
 # ---------------------------------------------------------------------------
 
+# @app.websocket("/ws")
+# async def ws_endpoint(ws: WebSocket):
+#     await ws.accept()
+#     try:
+#         while True:
+#             data = await ws.receive_text()
+#             try:
+#                 frame = _decode_image(data)
+#             except ValueError:
+#                 await ws.send_json({"err": "Bad image data"})
+#                 continue
+
+#             if _corners is None:
+#                 await ws.send_json({"err": "Not calibrated"})
+#                 continue
+
+#             # cv.imwrite("calib_ok.jpg", frame) # the raw camera frame
+#             board_img, _ = warp_board(frame, _corners)
+
+#             # cv.imwrite("calib_warp.jpg", board_img) # the rectified 800 × 800 board
+#             occ = occupancy_cnn(board_img)
+
+#             print(ascii_occ(occ))
+            
+#             move, fen = tracker.update(occ)
+
+#             if move:
+#                 await ws.send_json({"move": move, "fen": fen, "history": tracker.get_history()})
+#             else:
+#                 await ws.send_json({"noop": True})
+#     except WebSocketDisconnect:
+#         # Normal disconnect; nothing special to clean up for now.
+#         pass
+
+
+RECEIVE_TIMEOUT_S = 60
+HEARTBEAT_EVERY_S = 25
+DEBUG_DUMP_EVERY_S = 2.0
+_last_dump = 0.0
+
 @app.websocket("/ws")
 async def ws_endpoint(ws: WebSocket):
     await ws.accept()
+
+    async def keepalive():
+        # App-level heartbeat message so proxies don't think we're idle.
+        while True:
+            await asyncio.sleep(HEARTBEAT_EVERY_S)
+            try:
+                await ws.send_json({"type": "ping", "t": time.time()})
+            except Exception:
+                break  # socket likely gone
+
+    ka_task = asyncio.create_task(keepalive())
+
     try:
         while True:
-            data = await ws.receive_text()
+            # If the client stops talking, time out instead of hanging forever.
+            try:
+                data = await asyncio.wait_for(ws.receive_text(), timeout=RECEIVE_TIMEOUT_S)
+            except asyncio.TimeoutError:
+                await ws.close(code=1001)  # going away
+                break
+
+            # Optionally ignore explicit heartbeat/pong from client
+            if data.strip() in ("PING", '{"type":"pong"}'):
+                continue
+
+            # Decode
             try:
                 frame = _decode_image(data)
             except ValueError:
@@ -92,23 +157,40 @@ async def ws_endpoint(ws: WebSocket):
                 await ws.send_json({"err": "Not calibrated"})
                 continue
 
-            cv.imwrite("calib_ok.jpg", frame) # the raw camera frame
-            board_img, _ = warp_board(frame, _corners)
+            # Heavy work (warp + CNN) in a thread so we don't block the event loop
+            def _process():
+                board_img, _ = warp_board(frame, _corners)
+                occ = occupancy_cnn(board_img)  # ensure this uses no_grad/inference_mode internally
 
-            cv.imwrite("calib_warp.jpg", board_img) # the rectified 800 × 800 board
-            occ = occupancy_cnn(board_img)
+                print(ascii_occ(occ))
+                
+                move, fen = tracker.update(occ)
 
-            print(ascii_occ(occ))
-            
-            move, fen = tracker.update(occ)
+                # Rate-limited debug dumps
+                global _last_dump
+                now = time.time()
+                if os.getenv("DEBUG_WARP") == "1" and (now - _last_dump) > DEBUG_DUMP_EVERY_S:
+                    cv.imwrite("calib_ok.jpg", frame)
+                    cv.imwrite("calib_warp.jpg", board_img)
+                    _last_dump = now
+                return move, fen
+
+            try:
+                move, fen = await run_in_threadpool(_process)
+            except Exception as e:
+                # Catch-all so a single bad frame doesn't kill the socket
+                await ws.send_json({"err": f"server error: {type(e).__name__}"})
+                continue
 
             if move:
                 await ws.send_json({"move": move, "fen": fen, "history": tracker.get_history()})
             else:
                 await ws.send_json({"noop": True})
+
     except WebSocketDisconnect:
-        # Normal disconnect; nothing special to clean up for now.
         pass
+    finally:
+        ka_task.cancel()
 
 
 

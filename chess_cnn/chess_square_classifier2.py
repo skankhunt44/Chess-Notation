@@ -562,45 +562,87 @@ def main():
         return
 
     if args.cmd == "train":
-        if args.cmd == "train":
-            if args.preprocessed:
-                ds = CropFolderDataset(args.data_dir, transform=transforms.Compose([
+        import random
+        from torchvision import datasets, transforms
+
+        if args.preprocessed:
+            # === Preprocessed crops (folders 0_empty/1_white/2_black) ===
+            base = datasets.ImageFolder(
+                args.data_dir,
+                transform=transforms.Compose([
                     transforms.ToTensor(),
-                    transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),
-                ]))
-            else:
-                ds = ChessSquareDataset(args.data_dir)  # <-- this now returns PIL or add ToPILImage
+                    transforms.Normalize([0.485, 0.456, 0.406],
+                                        [0.229, 0.224, 0.225]),
+                ])
+            )
 
-            val_len  = int(len(ds) * args.val_split)
-            train_len = len(ds) - val_len
-            train_set, val_set = random_split(ds, [train_len, val_len])
+            # group id = 'img_0001' part of '.../2_black/img_0001_34.png'
+            def group_id(sample_path: str):
+                stem = Path(sample_path).stem        # e.g. img_0001_34
+                return stem.rsplit('_', 1)[0]        # -> img_0001
 
-            tl = DataLoader(train_set, batch_size=args.batch_size, shuffle=True,  num_workers=args.workers)
-            vl = DataLoader(val_set,   batch_size=args.batch_size, shuffle=False, num_workers=args.workers)
+            groups = [group_id(p) for p, _ in base.samples]
+            uniq   = sorted(set(groups))
+            random.seed(42)
+            random.shuffle(uniq)
+            n_val = max(1, int(args.val_split * len(uniq)))
+            val_boards = set(uniq[:n_val])
 
-            model = build_model().to(device)
+            train_idx = [i for i, g in enumerate(groups) if g not in val_boards]
+            val_idx   = [i for i, g in enumerate(groups) if g in  val_boards]
 
-            # >>> LOAD EXISTING WEIGHTS HERE <<<
-            if args.resume:
-                sd = torch.load(args.resume, map_location=device)
-                # handle both "state_dict" checkpoints and raw state_dict
-                if isinstance(sd, dict) and "state_dict" in sd:
-                    sd = sd["state_dict"]
-                model.load_state_dict(sd, strict=True)
-                print(f"Resumed weights from {args.resume}")
+            train_set = torch.utils.data.Subset(base, train_idx)
+            val_set   = torch.utils.data.Subset(base, val_idx)
 
-            criterion = nn.CrossEntropyLoss()
-            opt = torch.optim.AdamW(model.parameters(), lr=args.lr)
-            best = 0.0
+        else:
+            # === Raw boards (warp each, then crop inside __getitem__) ===
+            ds = ChessSquareDataset(args.data_dir)   # keep your ToPILImage fix inside the dataset
 
-            for epoch in range(1, args.epochs + 1):
-                tloss, tacc = epoch_loop(model, tl, criterion, opt, device, True)
-                vloss, vacc = epoch_loop(model, vl, criterion, opt, device, False)
-                print(f"epoch {epoch:02d}: train {tacc:.3f} val {vacc:.3f}")
-                if vacc > best:
-                    best = vacc
-                    torch.save(model.state_dict(), args.model_out)
-            return
+            # group by board_idx from ds.index tuples (board_idx, row, col)
+            board_ids = sorted({b for (b, _, _) in ds.index})
+            random.seed(42)
+            random.shuffle(board_ids)
+            n_val = max(1, int(args.val_split * len(board_ids)))
+            val_boards = set(board_ids[:n_val])
+
+            train_idx = [i for i, (b, _, _) in enumerate(ds.index) if b not in val_boards]
+            val_idx   = [i for i, (b, _, _) in enumerate(ds.index) if b in  val_boards]
+
+            train_set = torch.utils.data.Subset(ds, train_idx)
+            val_set   = torch.utils.data.Subset(ds, val_idx)
+
+        # loaders
+        tl = DataLoader(train_set, batch_size=args.batch_size,
+                        shuffle=True, num_workers=args.workers)
+        vl = DataLoader(val_set, batch_size=args.batch_size,
+                        shuffle=False, num_workers=args.workers)
+
+        # model
+        model = build_model().to(device)
+
+        # resume
+        if args.resume:
+            sd = torch.load(args.resume, map_location=device)
+            if isinstance(sd, dict) and "state_dict" in sd:
+                sd = sd["state_dict"]
+            model.load_state_dict(sd, strict=True)
+            print(f"Resumed weights from {args.resume}")
+
+        # loss/opt
+        criterion = nn.CrossEntropyLoss()
+        optim = torch.optim.AdamW(model.parameters(), lr=args.lr)
+
+        # train
+        best = 0.0
+        for epoch in range(1, args.epochs + 1):
+            tloss, tacc = epoch_loop(model, tl, criterion, optim, device, True)
+            vloss, vacc = epoch_loop(model, vl, criterion, optim, device, False)
+            print(f"epoch {epoch:02d}: train {tacc:.3f} val {vacc:.3f}")
+            if vacc > best:
+                best = vacc
+                torch.save(model.state_dict(), args.model_out)
+        return
+
 
 
     if args.cmd == "infer":

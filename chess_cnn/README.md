@@ -23,7 +23,7 @@ python chess_square_classifier2.py preview --image data/0046.png --show
 
 # Preprocess your new session to crops
 python chess_square_classifier2.py preprocess \
-  --src-dir data/session_259206557.../samples \
+  --src-dir ../data/session_*/samples \
   --dst-dir data/crops_my_cam \
   --workers 2
 
@@ -34,7 +34,7 @@ python chess_square_classifier2.py train \
   --epochs 10 \
   --batch-size 256 \
   --lr 3e-4 \
-  --model-out assets/model.pt
+  --model-out ../assets/model.pt
 
 # ...or continue from your existing model.pt
 python chess_square_classifier2.py train \
@@ -43,5 +43,10 @@ python chess_square_classifier2.py train \
   --epochs 6 \
   --batch-size 256 \
   --lr 2e-4 \
-  --resume assets/model.pt \
-  --model-out assets/model.pt
+  --resume ../assets/model.pt \
+  --model-out ../assets/model.pt
+
+# Quick sanity check on a saved warp
+python chess_square_classifier2.py infer-warp \
+  --model ../assets/model.pt \
+  --board-img ../data/session_2591762550623958/samples/img_0001.png
