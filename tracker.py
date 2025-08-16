@@ -76,20 +76,24 @@ class SquareTracker:
         # and disambiguates multiple changed squares naturally.
         # ------------------------------------------------------------------
         candidate = None
-        for move in self.board.legal_moves:
-            if self.board.piece_type_at(move.from_square) == chess.PAWN \
-                    and chess.square_rank(move.to_square) in (0, 7):
-                move = chess.Move(move.from_square, move.to_square,
-                                promotion=chess.QUEEN)
+        tested = set()  # (from, to, promo) keys after normalisation
+        for mv in self.board.legal_moves:
+            norm = mv
+            if self._is_pawn_promotion(mv):
+                norm = chess.Move(mv.from_square, mv.to_square, promotion=chess.QUEEN)
+
+            key = (norm.from_square, norm.to_square, norm.promotion or 0)
+            if key in tested:
+                continue
+            tested.add(key)
 
             next_board = self.board.copy(stack=False)
-            next_board.push(move)
+            next_board.push(norm)
             if np.array_equal(_board_to_occ(next_board), new_occ):
                 if candidate is not None:
-                    # Ambiguous – two moves create identical occupancy with only
-                    # white/black info (rare but possible with under‑promotion).
+                    # Two truly different moves lead to the same occupancy
                     return None, None
-                candidate = move
+                candidate = norm
 
         if candidate is None:
             # No legal move matches → likely CV noise, ignore frame.

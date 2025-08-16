@@ -197,19 +197,38 @@
       console.log('WS close', e.code, e.reason);
     };
     ws.onerror = (e) => console.error('WS error', e);
-    ws.onmessage = ({data}) => {
+    function uciToDashed(uci) {
+    // "e2e4" -> "e2-e4"
+    return `${uci.slice(0,2)}-${uci.slice(2,4)}`;
+    }
+
+    ws.onmessage = ({ data }) => {
       const msg = JSON.parse(data);
-      if (msg.type === 'ping') return;  // ignore server heartbeat
+      if (msg.type === 'ping') return;
 
       if (msg.ms !== undefined) {
         statusEl.textContent = `Proc ${msg.ms} ms`;
       }
-      if (msg.move) board.move(msg.move);
-      if (msg.history) historyEl.textContent = msg.history.join(' ');
-      if (msg.err)  statusEl.textContent = msg.err;
 
-      inFlight = false;                 // ACK: allow next frame
+      // ✅ Prefer authoritative FEN from the server – handles promotions correctly
+      if (msg.fen) {
+        // second arg "true" animates the change
+        board.position(msg.fen, true);
+      } else if (msg.move) {
+        // Fallback if you did not send FEN (non-promotion only)
+        if (msg.move.length === 4) {
+          board.move(uciToDashed(msg.move));
+        }
+        // If msg.move.length === 5 (promotion like "e7e8q"), chessboard.js can’t
+        // change the piece type – so without FEN there’s nothing reliable to do.
+      }
+
+      if (msg.history) historyEl.textContent = msg.history.join(' ');
+      if (msg.err) statusEl.textContent = msg.err;
+
+      inFlight = false; // allow next frame
     };
+
   }
 
   async function calibrate () {

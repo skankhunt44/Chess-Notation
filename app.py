@@ -244,50 +244,6 @@ async def ws_endpoint(ws: WebSocket):
 
                 return move, fen, ms
 
-            # def _process():
-            #     t0 = time.perf_counter()
-
-            #     # --- Warp (and downscale the board to 640x640 to shrink model work) ---
-            #     board_img, _ = warp_board(frame, _corners)
-            #     t1 = time.perf_counter()
-            #     if board_img.shape[0] != 640:
-            #         board_img = cv.resize(board_img, (640, 640), interpolation=cv.INTER_AREA)
-            #     t2 = time.perf_counter()
-
-            #     # --- Inference ---
-            #     occ = occupancy_cnn(board_img)      # ensure this is batched & no_grad in the model code
-            #     t3 = time.perf_counter()
-
-            #     # --- Tracker update ---
-            #     move, fen = tracker.update(occ)
-            #     t4 = time.perf_counter()
-
-            #     # Optional: sparse ASCII dump
-            #     log_every = float(os.getenv("LOG_EVERY", "0"))
-            #     if log_every > 0:
-            #         now = time.time()
-            #         if int(now / log_every) != int((now - 0.05) / log_every):
-            #             print(ascii_occ(occ))
-
-            #     # Optional: rate-limited debug images (DEBUG_WARP=1)
-            #     global _last_dump
-            #     now = time.time()
-            #     if os.getenv("DEBUG_WARP") == "1" and (now - _last_dump) > DEBUG_DUMP_EVERY_S:
-            #         cv.imwrite("calib_ok.jpg", frame)
-            #         cv.imwrite("calib_warp.jpg", board_img)
-            #         _last_dump = now
-
-            #     # breakdown in ms
-            #     timing = {
-            #         "warp": int((t1 - t0) * 1000),
-            #         "resize": int((t2 - t1) * 1000),
-            #         "model": int((t3 - t2) * 1000),
-            #         "tracker": int((t4 - t3) * 1000),
-            #         "total": int((t4 - t0) * 1000),
-            #     }
-            #     return move, fen, timing
-
-
             try:
                 move, fen, ms = await run_in_threadpool(_process)
             except Exception as e:
