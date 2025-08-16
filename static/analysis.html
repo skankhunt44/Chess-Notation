@@ -1,0 +1,293 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Analysis • Phone Chess Tracker</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="/chessboardjs-1.0.0/css/chessboard-1.0.0.min.css">
+  <script src="/chessboardjs-1.0.0/js/jquery-3.7.1.min.js"></script>
+  <script src="/chessboardjs-1.0.0/js/chessboard-1.0.0.min.js"></script>
+
+  <style>
+    :root { --w: 420px; }
+    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;margin:0;padding:16px;background:#fafafa;color:#222;}
+    .wrap{display:grid;grid-template-columns: var(--w) 1fr; gap:16px; align-items:start; max-width:1200px; margin:0 auto;}
+    h2{margin:0 0 8px;}
+    #board{width:var(--w); background:#fff; border-radius:8px; box-shadow: 0 1px 2px rgba(0,0,0,.06);}
+    .controls{display:flex; gap:8px; flex-wrap:wrap; margin:8px 0;}
+    button{padding:8px 12px; border:1px solid #cfd8e3; background:#fff; border-radius:8px; cursor:pointer;}
+    button:disabled{opacity:.5; cursor:not-allowed;}
+    .pill{display:inline-block; font-size:.86rem; padding:4px 8px;border-radius:999px;background:#f1f5f9;border:1px solid #e2e8f0;color:#334155}
+    table{width:100%; border-collapse:collapse; background:#fff; border-radius:8px; overflow:hidden; box-shadow: 0 1px 2px rgba(0,0,0,.06);}
+    th, td{padding:8px 10px; border-bottom:1px solid #edf2f7; text-align:left; font-size:.95rem;}
+    tr:hover{background:#f8fafc; cursor:pointer;}
+    .tag{font-size:.75rem; padding:2px 6px; border-radius:999px;}
+    .tag.good{background:#ecfeff; border:1px solid #a5f3fc; color:#155e75;}
+    .tag.inaccuracy{background:#fff7ed; border:1px solid #fed7aa; color:#9a3412;}
+    .tag.mistake{background:#fef2f2; border:1px solid #fecaca; color:#991b1b;}
+    .tag.blunder{background:#fef2f2; border:1px solid #fca5a5; color:#7f1d1d; font-weight:600;}
+    .meta{display:flex; align-items:center; gap:8px; margin:8px 0;}
+    .hl{outline:3px solid rgba(245,158,11,.9) !important; box-shadow: inset 0 0 0 2px #fff;}
+    .hl2{outline:3px solid rgba(99,102,241,.9) !important; box-shadow: inset 0 0 0 2px #fff;}
+    #status{min-height:1.4em; color:#475569;}
+    .right-top{display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;}
+    .eval{font-variant-numeric:tabular-nums;}
+    .kbd{font-family:ui-monospace,SFMono-Regular,Menlo,monospace; background:#e2e8f0; border-radius:6px; padding:2px 6px; font-size:.8rem;}
+  </style>
+</head>
+<body>
+  <h2>Game Analysis</h2>
+  <div class="wrap">
+    <div>
+      <div id="board"></div>
+      <div class="controls">
+        <button id="btnStart">⏮ Start</button>
+        <button id="btnPrev">◀︎ Prev</button>
+        <button id="btnPlay">▶︎ Play</button>
+        <button id="btnNext">Next ▶︎</button>
+        <button id="btnEnd">End ⏭</button>
+      </div>
+      <div class="meta">
+        <span id="status" class="pill">Loading…</span>
+      </div>
+      <div class="meta">
+        <span class="pill" id="summaryPill" style="display:none"></span>
+        <a id="downloadPGN" class="pill" style="display:none" download="analysis.pgn">Download PGN</a>
+      </div>
+      <p class="eval">
+        <strong>Position:</strong> <span id="posLabel">0 / 0</span> · 
+        <strong>Turn:</strong> <span id="turnLabel">-</span> ·
+        <strong>Eval:</strong> <span id="evalLabel">-</span> ·
+        <strong>Δ:</strong> <span id="deltaLabel">-</span> ·
+        <strong>Best:</strong> <span id="bestLabel">-</span>
+      </p>
+      <p>
+        Tips: use <span class="kbd">←</span>/<span class="kbd">→</span> to step, <span class="kbd">Space</span> to play/pause.
+      </p>
+    </div>
+
+    <div>
+      <div class="right-top">
+        <div class="pill" id="resultPill" style="display:none"></div>
+        <div></div>
+      </div>
+      <table id="movesTable">
+        <thead>
+          <tr><th>#</th><th>Side</th><th>Move</th><th>Eval</th><th>Δ</th><th>Best</th><th>Tag</th></tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+
+<script type="module">
+  import { Chess } from '/vendor/chess.js?v=2';  // ESM build from dist/esm
+
+  (function(){
+    const game = new Chess();
+
+    const board = Chessboard('board', {
+      position   : 'start',
+      draggable  : false,
+      pieceTheme : '/chessboardjs-1.0.0/img/chesspieces/wikipedia/{piece}.png'
+    });
+
+  const statusEl = document.getElementById('status');
+  const summaryPill = document.getElementById('summaryPill');
+  const resultPill  = document.getElementById('resultPill');
+  const downloadPGN = document.getElementById('downloadPGN');
+
+  const posLabel   = document.getElementById('posLabel');
+  const turnLabel  = document.getElementById('turnLabel');
+  const evalLabel  = document.getElementById('evalLabel');
+  const deltaLabel = document.getElementById('deltaLabel');
+  const bestLabel  = document.getElementById('bestLabel');
+
+  const tBody = document.querySelector('#movesTable tbody');
+
+  const btnStart = document.getElementById('btnStart');
+  const btnPrev  = document.getElementById('btnPrev');
+  const btnPlay  = document.getElementById('btnPlay');
+  const btnNext  = document.getElementById('btnNext');
+  const btnEnd   = document.getElementById('btnEnd');
+
+  let analysis = null;
+  let positions = [];   // FENs per ply, positions[i] is after i plies (positions[0] = start)
+  let cur = 0;
+  let timer = null;
+
+  function setButtons(on){
+    [btnStart,btnPrev,btnNext,btnEnd,btnPlay].forEach(b=> b.disabled = !on);
+  }
+
+  function clearHighlights(){
+    document.querySelectorAll('#board .square-55d63, #board [class*=square-]').forEach(el=>{
+      el.classList.remove('hl','hl2');
+    });
+  }
+
+  function getSquareEl(sq){ return document.querySelector(`#board .square-${sq}`); }
+
+  // Highlight last actual move (orange) and best move for side to move (indigo)
+  function highlightForIndex(i){
+    clearHighlights();
+    // last move that produced this position: i>0 -> moves[i-1]
+    if (i > 0) {
+      const gPrev = new Chess(positions[i-1]);
+      const san   = analysis.moves[i-1].move;
+      const mv    = gPrev.move(san, {sloppy:true});
+      if (mv) {
+        const a = getSquareEl(mv.from), b = getSquareEl(mv.to);
+        a && a.classList.add('hl'); b && b.classList.add('hl');
+      }
+    }
+    // best move from current position = analysis.moves[i]?.best (engine best before next ply)
+    if (i < analysis.moves.length) {
+      const bestSan = analysis.moves[i].best;
+      if (bestSan) {
+        const gNow = new Chess(positions[i]);
+        const mv2  = gNow.move(bestSan, {sloppy:true});
+        if (mv2) {
+          const a = getSquareEl(mv2.from), b = getSquareEl(mv2.to);
+          a && a.classList.add('hl2'); b && b.classList.add('hl2');
+        }
+      }
+    }
+  }
+
+  function showInfoForIndex(i){
+    posLabel.textContent = `${i} / ${analysis.moves.length}`;
+    const g = new Chess(positions[i]);
+    turnLabel.textContent = g.turn() === 'w' ? 'White' : 'Black';
+
+    // Eval/Δ/Best for the move ABOUT to be played from this position = analysis.moves[i]
+    if (i < analysis.moves.length) {
+      const r = analysis.moves[i];
+      evalLabel.textContent = (r.mate_after !== null) ? `M${Math.abs(r.mate_after)}` :
+        (r.eval_after == null ? '-' : (r.eval_after >= 0 ? `+${r.eval_after.toFixed(2)}` : r.eval_after.toFixed(2)));
+      deltaLabel.textContent = (r.delta == null ? '-' : (r.delta >= 0 ? `+${r.delta.toFixed(2)}` : r.delta.toFixed(2)));
+      bestLabel.textContent  = r.best || '-';
+    } else {
+      evalLabel.textContent = deltaLabel.textContent = bestLabel.textContent = '-';
+    }
+  }
+
+  function gotoIndex(i){
+    i = Math.max(0, Math.min(i, positions.length-1));
+    cur = i;
+    board.position(positions[i], true);
+    highlightForIndex(i);
+    showInfoForIndex(i);
+    // row highlight
+    tBody.querySelectorAll('tr').forEach(tr => tr.style.background = '');
+    if (i>0) {
+      const tr = document.getElementById(`row-${i-1}`);
+      tr && (tr.style.background = '#f1f5f9');
+    }
+  }
+
+  function next(){ gotoIndex(cur+1); }
+  function prev(){ gotoIndex(cur-1); }
+  function start(){ gotoIndex(0); }
+  function end(){ gotoIndex(positions.length-1); }
+
+  function togglePlay(){
+    if (timer) {
+      clearInterval(timer); timer = null; btnPlay.textContent = '▶︎ Play'; return;
+    }
+    btnPlay.textContent = '⏸ Pause';
+    timer = setInterval(() => {
+      if (cur >= positions.length-1) { togglePlay(); return; }
+      next();
+    }, 600);
+  }
+
+  btnStart.onclick = start;
+  btnPrev.onclick  = prev;
+  btnNext.onclick  = next;
+  btnEnd.onclick   = end;
+  btnPlay.onclick  = togglePlay;
+
+  window.addEventListener('keydown', (e)=>{
+    if (e.target && ['INPUT','TEXTAREA'].includes(e.target.tagName)) return;
+    if (e.code === 'ArrowLeft') { prev(); e.preventDefault(); }
+    if (e.code === 'ArrowRight') { next(); e.preventDefault(); }
+    if (e.code === 'Space') { togglePlay(); e.preventDefault(); }
+  });
+
+  async function analyze(){
+    setButtons(false);
+    statusEl.textContent = 'Analyzing…';
+    try {
+      const res = await fetch('/analyze', {
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ depth: 14 }) // or { movetime_ms: 200 }
+      });
+      if (!res.ok) throw new Error(await res.text());
+      analysis = await res.json();
+
+      // Build positions: start + after each SAN
+      const g = new Chess(); // startpos
+      positions = [g.fen()];
+      analysis.moves.forEach(r => {
+        try { g.move(r.move, {sloppy:true}); } catch(e) {}
+        positions.push(g.fen());
+      });
+
+      // Fill summary + pgn
+      summaryPill.style.display = '';
+      summaryPill.textContent =
+        `Result ${analysis.summary.result} · ACPL W ${analysis.summary.acpl_white} / B ${analysis.summary.acpl_black} ` +
+        `· W bl/mk/inacc ${analysis.summary.white.blunder}/${analysis.summary.white.mistake}/${analysis.summary.white.inaccuracy} ` +
+        `· B bl/mk/inacc ${analysis.summary.black.blunder}/${analysis.summary.black.mistake}/${analysis.summary.black.inaccuracy}`;
+
+      resultPill.style.display = '';
+      resultPill.textContent = `Moves: ${analysis.moves.length}`;
+
+      downloadPGN.style.display = '';
+      downloadPGN.href = URL.createObjectURL(new Blob([analysis.pgn], {type:'text/plain'}));
+
+      // Fill move table
+      tBody.innerHTML = '';
+      analysis.moves.forEach((r, idx)=>{
+        const tr = document.createElement('tr');
+        tr.id = `row-${idx}`;
+        const td = (txt)=>{ const c = document.createElement('td'); c.textContent = txt; return c; };
+
+        tr.appendChild(td(r.ply));
+        tr.appendChild(td(r.side[0]));  // W/B
+        tr.appendChild(td(r.move));
+        tr.appendChild(td(
+          r.mate_after !== null ? `M${Math.abs(r.mate_after)}` :
+          (r.eval_after===null ? '' : (r.eval_after>=0?`+${r.eval_after.toFixed(2)}`:`${r.eval_after.toFixed(2)}`))
+        ));
+        tr.appendChild(td(r.delta==null ? '' : (r.delta>=0?`+${r.delta.toFixed(2)}`:`${r.delta.toFixed(2)}`)));
+        tr.appendChild(td(r.best || ''));
+
+        const tagCell = document.createElement('td');
+        const span = document.createElement('span');
+        const tag = r.tag || 'good';
+        span.className = `tag ${tag}`;
+        span.textContent = tag;
+        tagCell.appendChild(span);
+        tr.appendChild(tagCell);
+
+        tr.onclick = ()=> gotoIndex(idx); // jump to position AFTER this move
+        tBody.appendChild(tr);
+      });
+
+      statusEl.textContent = 'Done. Use the controls or click any row.';
+      setButtons(true);
+      gotoIndex(0);
+
+    } catch (e) {
+      statusEl.textContent = `Analysis failed: ${e.message}`;
+    }
+  }
+
+  analyze();
+})();
+</script>
+</body>
+</html>

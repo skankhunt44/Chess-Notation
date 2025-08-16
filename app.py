@@ -11,14 +11,19 @@ import cv2 as cv
 import numpy as np
 from fastapi import Body, FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.staticfiles import StaticFiles
+from fastapi.responses import JSONResponse
 from starlette.concurrency import run_in_threadpool
 
 from vision import find_board, warp_board, occupancy_cnn, draw_board_overlay, ascii_occ
 from tracker import SquareTracker
+from stockfish import _analyze_moves_with_engine
 # from autolabel import learn_proto, auto_label
 
 import asyncio
 from dataclasses import asdict
+
+import chess
+import chess.engine
 
 # --------------------------------------------------------------------------------------
 # App & globals
@@ -312,6 +317,35 @@ def api_draw_claim():
 def api_reset():
     tracker.reset()
     return {"fen": tracker.board.fen(), "history": tracker.get_history()}
+
+
+ENGINE_PATH = os.getenv("STOCKFISH_PATH", "stockfish")
+
+@app.post("/analyze")
+async def api_analyze(payload: dict = Body(default={})):
+    """
+    Body (all optional):
+      { "moves": ["e4","e5","Nf3", ...], "depth": 14 }  OR  { "movetime_ms": 200 }
+    If 'moves' not provided, uses current tracker's move list.
+    """
+    san_moves = payload.get("moves") or tracker.get_history()  # already SAN per your code
+    if not san_moves:
+        raise HTTPException(400, "No moves to analyze yet.")
+
+    depth = payload.get("depth")
+    movetime_ms = payload.get("movetime_ms")
+
+    def _run():
+        return _analyze_moves_with_engine(san_moves, depth=depth, movetime_ms=movetime_ms)
+
+    try:
+        result = await run_in_threadpool(_run)  # don’t block the event loop with engine calls
+    except FileNotFoundError:
+        raise HTTPException(500, f"Stockfish binary not found at '{ENGINE_PATH}'. Set STOCKFISH_PATH.")
+    except chess.engine.EngineError as e:
+        raise HTTPException(500, f"Engine error: {e}")
+
+    return JSONResponse(result)
 
 
 # --------------------------------------------------------------------------------------

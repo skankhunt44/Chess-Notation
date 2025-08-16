@@ -66,6 +66,12 @@
     <pre id="history"></pre>
   </div>
 
+  <button id="analyzeBtn" disabled>Analyze with Stockfish</button>
+  <span class="spacer" style="flex-basis:100%"></span>
+  <div id="analysis" class="pill" style="display:none"></div>
+  <pre id="analysisTable" style="width:var(--w); max-width:100%; white-space:pre-wrap"></pre>
+
+
   <script>
   // ---------- elements ----------
   const statusEl   = document.getElementById('status');
@@ -285,7 +291,10 @@
         if (msg.move.length === 4) board.move(uciToDashed(msg.move));
       }
 
-      if (msg.history) historyEl.textContent = msg.history.join(' ');
+      if (msg.history) {
+        historyEl.textContent = msg.history.join(' ');
+        enableAnalyzeIfMoves();            // ← enable the button once moves exist
+      }
       if (msg.err) statusEl.textContent = msg.err;
 
       // State flags (check, claimables, game over)
@@ -433,6 +442,7 @@
       const body = await postJSON('/reset');
       board.position(body.fen || 'start', false);
       historyEl.textContent = (body.history || []).join(' ');
+      enableAnalyzeIfMoves(); 
       statusEl.textContent = 'New game — tracking resumed.';
       setFlags(null);
       // Keep calibration; user can hit the button to (re)start tracking
@@ -497,5 +507,79 @@
     statusEl.textContent = 'Tip: open this over HTTPS (ngrok/cloudflared) or localhost so the camera prompt appears.';
   }
   </script>
+
+
+
+  <script>
+  const analyzeBtn = document.getElementById('analyzeBtn');
+  const analysisEl = document.getElementById('analysis');
+  const analysisTable = document.getElementById('analysisTable');
+  document.addEventListener('DOMContentLoaded', enableAnalyzeIfMoves);
+
+  function enableAnalyzeIfMoves() {
+    const hasMoves = (historyEl.textContent.trim().length > 0);
+    analyzeBtn.disabled = !hasMoves;
+  }
+  // call this whenever history updates:
+  // const _origSetHistory = (txt)=>{};
+  // You already set history here:
+  //   if (msg.history) historyEl.textContent = msg.history.join(' ');
+  // After that line, add:
+  //   enableAnalyzeIfMoves();
+
+  analyzeBtn.onclick = async ()=>{
+    // try {
+    //   statusEl.textContent = 'Analyzing…';
+    //   analyzeBtn.disabled = true;
+    //   const res = await fetch('/analyze', {
+    //     method: 'POST',
+    //     headers: {'Content-Type':'application/json'},
+    //     body: JSON.stringify({ depth: 14 })  // or { movetime_ms: 200 }
+    //   });
+    //   if (!res.ok) throw new Error(await res.text());
+    //   const data = await res.json();
+
+    //   // Summary pill
+    //   analysisEl.style.display = '';
+    //   analysisEl.textContent =
+    //     `Result ${data.summary.result} · ACPL W ${data.summary.acpl_white} / B ${data.summary.acpl_black} ` +
+    //     `· W bl/mk/inacc ${data.summary.white.blunder}/${data.summary.white.mistake}/${data.summary.white.inaccuracy} ` +
+    //     `· B bl/mk/inacc ${data.summary.black.blunder}/${data.summary.black.mistake}/${data.summary.black.inaccuracy}`;
+
+    //   // Table
+    //   const rows = [["#","Side","Move","Eval","Δ","Best","Tag"]];
+    //   for (const r of data.moves) {
+    //     rows.push([
+    //       r.ply, r.side[0], r.move,
+    //       r.mate_after !== null ? `M${Math.abs(r.mate_after)}` :
+    //         (r.eval_after===null ? "" : (r.eval_after>=0?`+${r.eval_after.toFixed(2)}`:`${r.eval_after.toFixed(2)}`)),
+    //       r.delta==null ? "" : (r.delta>=0?`+${r.delta.toFixed(2)}`:`${r.delta.toFixed(2)}`),
+    //       r.best || "",
+    //       r.tag
+    //     ]);
+    //   }
+    //   // Pretty-print columns
+    //   const widths = rows[0].map((_,i)=> Math.max(...rows.map(r=>String(r[i]).length)));
+    //   const lines = rows.map(r => r.map((c,i)=>String(c).padEnd(widths[i])).join('  '));
+    //   analysisTable.textContent = lines.join('\n');
+
+    //   // Offer PGN download
+    //   const a = document.createElement('a');
+    //   a.download = 'analysis.pgn';
+    //   a.href = URL.createObjectURL(new Blob([data.pgn], {type: 'text/plain'}));
+    //   a.textContent = 'Download PGN';
+    //   analysisTable.appendChild(document.createElement('br'));
+    //   analysisTable.appendChild(a);
+
+    //   statusEl.textContent = 'Analysis complete.';
+    // } catch (e) {
+    //   statusEl.textContent = `Analysis failed: ${e.message}`;
+    // } finally {
+    //   enableAnalyzeIfMoves();
+    // }
+    window.open('/analysis.html');
+  };
+</script>
+
 </body>
 </html>
