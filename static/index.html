@@ -40,9 +40,9 @@
   <div id="controls" class="row">
     <button id="enableCam">Enable camera</button>
     <button id="calib" disabled>Calibrate board</button>
-    <button id="btnEmpty" disabled>Capture empty</button>
+    <!-- <button id="btnEmpty" disabled>Capture empty</button>
     <button id="btnTeachW" disabled>Teach white</button>
-    <button id="btnTeachB" disabled>Teach black</button>
+    <button id="btnTeachB" disabled>Teach black</button> -->
     <button id="btnSample" disabled>Capture sample</button>
 
     <!-- Game lifecycle controls -->
@@ -75,9 +75,9 @@
 
   const enableBtn  = document.getElementById('enableCam');
   const calibBtn   = document.getElementById('calib');
-  const btnEmpty   = document.getElementById('btnEmpty');
-  const btnTeachW  = document.getElementById('btnTeachW');
-  const btnTeachB  = document.getElementById('btnTeachB');
+  // const btnEmpty   = document.getElementById('btnEmpty');
+  // const btnTeachW  = document.getElementById('btnTeachW');
+  // const btnTeachB  = document.getElementById('btnTeachB');
   const btnSample  = document.getElementById('btnSample');
   const warpCanvas = document.getElementById('warp');
   const gridDiv    = document.getElementById('grid');
@@ -127,7 +127,7 @@
   function setFlags(state) {
     if (!state) { flagsEl.style.display = 'none'; return; }
     const pills = [];
-    if (state.check) pills.push('Check');
+    if (state.check) pills.push('Checkmate');
     if (state.threefold_claimable) pills.push('Threefold claimable');
     if (state.fifty_moves_claimable) pills.push('50-move claimable');
     if (state.fivefold_repetition) pills.push('Auto-draw (5×)');
@@ -331,7 +331,7 @@
       step = 1;
       statusEl.textContent = 'Corners found. Set up the board and press again.';
       calibBtn.textContent = 'Start tracking';
-      btnEmpty.disabled = false;
+      btnSample.disabled = false; // ← enable sample capture right away
     } else {
       calibBtn.disabled = true;
       startWS();
@@ -433,12 +433,16 @@
       const body = await postJSON('/reset');
       board.position(body.fen || 'start', false);
       historyEl.textContent = (body.history || []).join(' ');
-      statusEl.textContent = 'New game. start tracking.';
+      statusEl.textContent = 'New game — tracking resumed.';
       setFlags(null);
       // Keep calibration; user can hit the button to (re)start tracking
       calibBtn.textContent = 'Start tracking';
-      // leave `step` unchanged (likely 1 if you calibrated earlier)
-      enableEndControls(false);
+    // If camera is live, restart WS so buttons get enabled in ws.onopen
+      if (track && track.readyState === 'live') {
+        startWS();
+      } else {
+        statusEl.textContent = 'New game. Start tracking when ready.';
+      }
       claimBtn.disabled = true;
     } catch (e) {
       statusEl.textContent = `Reset failed: ${e.message}`;
@@ -449,20 +453,20 @@
   enableBtn.addEventListener('click', requestCamera);
   calibBtn.addEventListener('click', calibrate);
 
-  btnEmpty.onclick = async ()=>{
-    await postB64('/capture-empty');
-    statusEl.textContent = 'Empty captured. Teach colors.';
-    btnTeachW.disabled = btnTeachB.disabled = false;
-  };
+  // btnEmpty.onclick = async ()=>{
+  //   await postB64('/capture-empty');
+  //   statusEl.textContent = 'Empty captured. Teach colors.';
+  //   btnTeachW.disabled = btnTeachB.disabled = false;
+  // };
 
-  btnTeachW.onclick = ()=> postB64('/teach-color/white').then(()=> {
-    statusEl.textContent='White learned.';
-  }).catch(e => statusEl.textContent = e.message);
+  // btnTeachW.onclick = ()=> postB64('/teach-color/white').then(()=> {
+  //   statusEl.textContent='White learned.';
+  // }).catch(e => statusEl.textContent = e.message);
 
-  btnTeachB.onclick = ()=> postB64('/teach-color/black').then(()=> {
-    statusEl.textContent='Black learned. Ready to label!';
-    btnSample.disabled = false;
-  }).catch(e => statusEl.textContent = e.message);
+  // btnTeachB.onclick = ()=> postB64('/teach-color/black').then(()=> {
+  //   statusEl.textContent='Black learned. Ready to label!';
+  //   btnSample.disabled = false;
+  // }).catch(e => statusEl.textContent = e.message);
 
   btnSample.onclick = async ()=>{
     try {
