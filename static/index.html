@@ -11,16 +11,24 @@
   <script src="/chessboardjs-1.0.0/js/chessboard-1.0.0.min.js"></script>
 
   <style>
-    body{font-family:sans-serif;margin:0;display:flex;flex-direction:column;align-items:center;padding:10px}
-    #board{width:400px;margin-top:12px}
-    #status{margin-top:8px;color:#444;text-align:center}
-    #cam{display:block;max-width:100%;width:420px;background:#000}
-    #controls{display:flex;flex-wrap:wrap;gap:8px;margin:10px 0}
-    button{padding:8px 12px}
-    #history{white-space:pre-wrap;margin-top:8px;width:400px;max-width:100%}
-    #warp{max-width:100%;border:1px solid #ddd;margin-top:8px}
+    :root { --w: 400px; }
+    *{box-sizing:border-box}
+    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;margin:0;display:flex;flex-direction:column;align-items:center;padding:12px;gap:10px;background:#fafafa;color:#222}
+    h2{margin:4px 0 0}
+    #cam{display:block;max-width:100%;width:420px;background:#000;border-radius:8px}
+    #controls{display:flex;flex-wrap:wrap;gap:8px;margin:6px 0;justify-content:center}
+    button{padding:8px 12px;border:1px solid #ccc;border-radius:8px;background:#fff;cursor:pointer}
+    button:disabled{opacity:.5;cursor:not-allowed}
+    #board{width:var(--w);margin-top:6px}
+    #status{margin-top:4px;color:#444;text-align:center;min-height:1.4em}
+    #historyWrap{width:var(--w);max-width:100%}
+    #history{white-space:pre-wrap;margin-top:6px;width:100%;background:#fff;border:1px solid #e5e5e5;border-radius:8px;padding:8px;min-height:52px}
+    #warp{max-width:100%;border:1px solid #ddd;margin-top:8px;border-radius:8px}
     #grid{margin-top:8px}
     #grid button{width:40px;height:40px}
+    .row{display:flex;flex-wrap:wrap;gap:8px;justify-content:center}
+    .pill{font-size:.86rem;padding:4px 8px;border-radius:999px;background:#f1f5f9;border:1px solid #e2e8f0;color:#334155}
+    .spacer{height:6px}
   </style>
 </head>
 
@@ -29,36 +37,56 @@
 
   <video id="cam" autoplay muted playsinline></video>
 
-  <div id="controls">
+  <div id="controls" class="row">
     <button id="enableCam">Enable camera</button>
     <button id="calib" disabled>Calibrate board</button>
     <button id="btnEmpty" disabled>Capture empty</button>
     <button id="btnTeachW" disabled>Teach white</button>
     <button id="btnTeachB" disabled>Teach black</button>
     <button id="btnSample" disabled>Capture sample</button>
+
+    <!-- Game lifecycle controls -->
+    <span class="spacer" style="flex-basis:100%"></span>
+    <button id="resignW" disabled>White resigns</button>
+    <button id="resignB" disabled>Black resigns</button>
+    <button id="agreeDraw" disabled>Agree draw</button>
+    <button id="claimDraw" disabled>Claim draw</button>
+    <button id="resetGame">New game</button>
   </div>
 
+  <!-- Labeling preview (optional flow you already had) -->
   <canvas id="warp" width="800" height="800" style="display:none"></canvas>
   <div id="grid" style="display:none"></div>
 
   <div id="board"></div>
   <div id="status">Waiting for camera …</div>
-  <pre id="history"></pre>
+
+  <div id="historyWrap">
+    <div class="pill" id="flags" style="display:none"></div>
+    <pre id="history"></pre>
+  </div>
 
   <script>
   // ---------- elements ----------
-  const statusEl  = document.getElementById('status');
-  const videoEl   = document.getElementById('cam');
-  const historyEl = document.getElementById('history');
+  const statusEl   = document.getElementById('status');
+  const flagsEl    = document.getElementById('flags');
+  const videoEl    = document.getElementById('cam');
+  const historyEl  = document.getElementById('history');
 
-  const enableBtn = document.getElementById('enableCam');
-  const calibBtn  = document.getElementById('calib');
-  const btnEmpty  = document.getElementById('btnEmpty');
-  const btnTeachW = document.getElementById('btnTeachW');
-  const btnTeachB = document.getElementById('btnTeachB');
-  const btnSample = document.getElementById('btnSample');
-  const warpCanvas= document.getElementById('warp');
-  const gridDiv   = document.getElementById('grid');
+  const enableBtn  = document.getElementById('enableCam');
+  const calibBtn   = document.getElementById('calib');
+  const btnEmpty   = document.getElementById('btnEmpty');
+  const btnTeachW  = document.getElementById('btnTeachW');
+  const btnTeachB  = document.getElementById('btnTeachB');
+  const btnSample  = document.getElementById('btnSample');
+  const warpCanvas = document.getElementById('warp');
+  const gridDiv    = document.getElementById('grid');
+
+  const resignWBtn = document.getElementById('resignW');
+  const resignBBtn = document.getElementById('resignB');
+  const agreeBtn   = document.getElementById('agreeDraw');
+  const claimBtn   = document.getElementById('claimDraw');
+  const resetBtn   = document.getElementById('resetGame');
 
   // ---------- chessboard.js ----------
   const board = Chessboard('board', {
@@ -79,19 +107,40 @@
   let lastSentAt = 0;
 
   // ---------- helpers ----------
-  function wsURL () {
-    const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-    return `${proto}://${location.host}/ws`;
+  const wsURL = () => (location.protocol === 'https:' ? 'wss' : 'ws') + '://' + location.host + '/ws';
+
+  const blobToB64 = (blob) => new Promise(r => {
+    const fr = new FileReader();
+    fr.onload = () => r(fr.result);
+    fr.readAsDataURL(blob);
+  });
+
+  const isSecure = () =>
+    window.isSecureContext || location.protocol === 'https:' || location.hostname === 'localhost';
+
+  function uciToDashed(uci) {
+    // "e2e4" -> "e2-e4"
+    if (!uci || uci.length < 4) return uci;
+    return `${uci.slice(0,2)}-${uci.slice(2,4)}`;
   }
-  function blobToB64 (blob) {
-    return new Promise(r => {
-      const fr = new FileReader();
-      fr.onload = () => r(fr.result);
-      fr.readAsDataURL(blob);
-    });
-  }
-  function isSecure() {
-    return window.isSecureContext || location.protocol === 'https:' || location.hostname === 'localhost';
+
+  function setFlags(state) {
+    if (!state) { flagsEl.style.display = 'none'; return; }
+    const pills = [];
+    if (state.check) pills.push('Check');
+    if (state.threefold_claimable) pills.push('Threefold claimable');
+    if (state.fifty_moves_claimable) pills.push('50-move claimable');
+    if (state.fivefold_repetition) pills.push('Auto-draw (5×)');
+    if (state.seventyfive_moves) pills.push('Auto-draw (75-move)');
+    if (state.stalemate) pills.push('Stalemate');
+    if (state.insufficient_material) pills.push('Insufficient material');
+
+    if (pills.length) {
+      flagsEl.textContent = pills.join(' · ');
+      flagsEl.style.display = '';
+    } else {
+      flagsEl.style.display = 'none';
+    }
   }
 
   // capture frame (downscale + compress)
@@ -157,6 +206,27 @@
     return !!track;
   }
 
+  function enableEndControls(on) {
+    resignWBtn.disabled = !on;
+    resignBBtn.disabled = !on;
+    agreeBtn.disabled   = !on;
+    // claimBtn toggled dynamically based on server flags
+  }
+
+  function closeWS(keepCamera = true) {
+    try { ws && ws.readyState === 1 && ws.close(); } catch {}
+    ws = null;
+    inFlight = false;
+    pendingBlob = null;
+
+    if (!keepCamera) {
+      try { stream && stream.getTracks().forEach(t => t.stop()); } catch {}
+      track = null;
+      stream = null;
+      videoEl.srcObject = null;
+    }
+}
+
   // --- Backpressure-aware sender (keeps only the newest frame; 1 in-flight) ---
   async function refreshPending() {
     if (!track) return;
@@ -187,48 +257,63 @@
 
   async function startWS () {
     ws = new WebSocket(wsURL());
-    ws.onopen  = () => { 
+    ws.onopen  = () => {
       statusEl.textContent = 'Connected – tracking moves.';
       inFlight = false; pendingBlob = null; lastSentAt = 0;
+      enableEndControls(true);
       pump();
     };
     ws.onclose = (e) => {
-      statusEl.textContent = `WebSocket closed (code ${e.code})`;
       console.log('WS close', e.code, e.reason);
+      statusEl.textContent = `WebSocket closed (code ${e.code})`;
+      enableEndControls(false);
+      claimBtn.disabled = true;
     };
     ws.onerror = (e) => console.error('WS error', e);
-    function uciToDashed(uci) {
-    // "e2e4" -> "e2-e4"
-    return `${uci.slice(0,2)}-${uci.slice(2,4)}`;
-    }
 
-    ws.onmessage = ({ data }) => {
+    ws.onmessage = ({data}) => {
       const msg = JSON.parse(data);
-      if (msg.type === 'ping') return;
+      if (msg.type === 'ping') return;  // ignore server heartbeat
 
-      if (msg.ms !== undefined) {
-        statusEl.textContent = `Proc ${msg.ms} ms`;
-      }
+      if (msg.ms !== undefined) statusEl.textContent = `Proc ${msg.ms} ms`;
 
-      // ✅ Prefer authoritative FEN from the server – handles promotions correctly
+      // Prefer authoritative FEN for rendering (promotions, castling, etc.)
       if (msg.fen) {
-        // second arg "true" animates the change
         board.position(msg.fen, true);
       } else if (msg.move) {
-        // Fallback if you did not send FEN (non-promotion only)
-        if (msg.move.length === 4) {
-          board.move(uciToDashed(msg.move));
-        }
-        // If msg.move.length === 5 (promotion like "e7e8q"), chessboard.js can’t
-        // change the piece type – so without FEN there’s nothing reliable to do.
+        // Fallback if no FEN (non-promotion only)
+        if (msg.move.length === 4) board.move(uciToDashed(msg.move));
       }
 
       if (msg.history) historyEl.textContent = msg.history.join(' ');
       if (msg.err) statusEl.textContent = msg.err;
 
-      inFlight = false; // allow next frame
-    };
+      // State flags (check, claimables, game over)
+      if (msg.state) {
+        setFlags(msg.state);
 
+        // Enable "Claim draw" only if claimable (threefold or fifty-move)
+        const claimable = !!(msg.state.threefold_claimable || msg.state.fifty_moves_claimable);
+        claimBtn.disabled = !claimable;
+
+        if (msg.state.game_over) {
+          const term = msg.state.termination || 'GAME_OVER';
+          const res  = msg.state.result || '';
+          statusEl.textContent = `Game over (${term}): ${res}`;
+          closeWS(true);
+          enableEndControls(false);
+          claimBtn.disabled = true;
+        } else if (msg.state.check) {
+          // Only show "Check!" if not game over
+          statusEl.textContent = 'Check!';
+        }
+      } else {
+        claimBtn.disabled = true;
+        setFlags(null);
+      }
+
+      inFlight = false;                 // ACK: allow next frame
+    };
   }
 
   async function calibrate () {
@@ -290,8 +375,78 @@
     gridDiv.appendChild(save);
   }
 
+  // ---------- resign / draw / reset ----------
+  async function postJSON(url, opts={}) {
+    const res = await fetch(url, { method:'POST', ...opts });
+    const body = await res.json().catch(()=> ({}));
+    if (!res.ok) throw new Error(body.detail || JSON.stringify(body));
+    return body;
+  }
+
+  async function resign(color) {
+    try {
+      const body = await postJSON(`/resign/${color}`);
+      if (body.fen) board.position(body.fen, false);
+      if (body.history) historyEl.textContent = body.history.join(' ');
+      statusEl.textContent = `Game over (${body.state?.termination || 'RESIGNATION'}): ${body.state?.result || ''}`;
+      closeWS(true);
+      enableEndControls(false);
+      claimBtn.disabled = true;
+      setFlags(body.state || null);
+    } catch (e) {
+      statusEl.textContent = `Resign failed: ${e.message}`;
+    }
+  }
+
+  async function agreeDraw() {
+    try {
+      const body = await postJSON('/draw/agree');
+      if (body.fen) board.position(body.fen, false);
+      if (body.history) historyEl.textContent = body.history.join(' ');
+      statusEl.textContent = `Game over (${body.state?.termination || 'DRAW'}): ${body.state?.result || ''}`;
+      closeWS(true);
+      enableEndControls(false);
+      claimBtn.disabled = true;
+      setFlags(body.state || null);
+    } catch (e) {
+      statusEl.textContent = `Agree draw failed: ${e.message}`;
+    }
+  }
+
+  async function claimDraw() {
+    try {
+      const body = await postJSON('/draw/claim');
+      if (body.fen) board.position(body.fen, false);
+      if (body.history) historyEl.textContent = body.history.join(' ');
+      statusEl.textContent = `Game over (${body.state?.termination || 'DRAW'}): ${body.state?.result || ''}`;
+      closeWS(true);
+      enableEndControls(false);
+      claimBtn.disabled = true;
+      setFlags(body.state || null);
+    } catch (e) {
+      statusEl.textContent = `Claim failed: ${e.message}`;
+    }
+  }
+
+  async function resetGame() {
+    try {
+      const body = await postJSON('/reset');
+      board.position(body.fen || 'start', false);
+      historyEl.textContent = (body.history || []).join(' ');
+      statusEl.textContent = 'New game. start tracking.';
+      setFlags(null);
+      // Keep calibration; user can hit the button to (re)start tracking
+      calibBtn.textContent = 'Start tracking';
+      // leave `step` unchanged (likely 1 if you calibrated earlier)
+      enableEndControls(false);
+      claimBtn.disabled = true;
+    } catch (e) {
+      statusEl.textContent = `Reset failed: ${e.message}`;
+    }
+  }
+
   // ---------- wire up UI ----------
-  document.getElementById('enableCam').addEventListener('click', requestCamera);
+  enableBtn.addEventListener('click', requestCamera);
   calibBtn.addEventListener('click', calibrate);
 
   btnEmpty.onclick = async ()=>{
@@ -302,28 +457,38 @@
 
   btnTeachW.onclick = ()=> postB64('/teach-color/white').then(()=> {
     statusEl.textContent='White learned.';
-  });
+  }).catch(e => statusEl.textContent = e.message);
 
   btnTeachB.onclick = ()=> postB64('/teach-color/black').then(()=> {
     statusEl.textContent='Black learned. Ready to label!';
     btnSample.disabled = false;
-  });
+  }).catch(e => statusEl.textContent = e.message);
 
   btnSample.onclick = async ()=>{
-    const {labels, warp_png} = await postB64('/propose-labels');
-    curLabels = labels; curWarp = warp_png;
-    const img = new Image();
-    img.onload = ()=>{
-      const ctx = warpCanvas.getContext('2d');
-      ctx.clearRect(0,0,800,800);
-      ctx.drawImage(img,0,0,800,800);
-      warpCanvas.style.display = 'block';
-      renderGrid();
-    };
-    img.src = 'data:image/png;base64,'+curWarp;
+    try {
+      const {labels, warp_png} = await postB64('/propose-labels');
+      curLabels = labels; curWarp = warp_png;
+      const img = new Image();
+      img.onload = ()=>{
+        const ctx = warpCanvas.getContext('2d');
+        ctx.clearRect(0,0,800,800);
+        ctx.drawImage(img,0,0,800,800);
+        warpCanvas.style.display = 'block';
+        renderGrid();
+      };
+      img.src = 'data:image/png;base64,'+curWarp;
+    } catch (e) {
+      statusEl.textContent = e.message;
+    }
   };
 
-  // ---------- startup hint ----------
+  resignWBtn.onclick = () => resign('white');
+  resignBBtn.onclick = () => resign('black');
+  agreeBtn.onclick   = agreeDraw;
+  claimBtn.onclick   = claimDraw;
+  resetBtn.onclick   = resetGame;
+
+  // ---------- startup tip ----------
   if (!isSecure()) {
     statusEl.textContent = 'Tip: open this over HTTPS (ngrok/cloudflared) or localhost so the camera prompt appears.';
   }

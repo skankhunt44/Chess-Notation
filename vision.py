@@ -92,33 +92,6 @@ def warp_board(frame: np.ndarray, corners: np.ndarray) -> Tuple[np.ndarray, np.n
 # Occupancy detection (HSV threshold version)
 # ---------------------------------------------------------------------------
 
-# def occupancy_hsv(board_img: np.ndarray) -> np.ndarray:
-#     """Return 8 × 8 matrix: 0 = empty, 1 = white piece, 2 = black piece."""
-#     hsv = cv.cvtColor(board_img, cv.COLOR_BGR2HSV)
-
-#     w_mask = cv.inRange(hsv, WHITE_LOWER, WHITE_UPPER)
-#     b_mask = cv.inRange(hsv, BLACK_LOWER, BLACK_UPPER)
-
-#     w_mask = cv.morphologyEx(w_mask, cv.MORPH_CLOSE, _KERNEL, iterations=2)
-#     b_mask = cv.morphologyEx(b_mask, cv.MORPH_CLOSE, _KERNEL, iterations=2)
-
-#     occ = np.zeros((8, 8), np.int8)
-#     sq = CALIB_SIZE // 8
-
-#     for r in range(8):
-#         for c in range(8):
-#             y0, y1 = r * sq, (r + 1) * sq
-#             x0, x1 = c * sq, (c + 1) * sq
-#             roi_w = w_mask[y0:y1, x0:x1]
-#             roi_b = b_mask[y0:y1, x0:x1]
-
-#             # proportion of coloured pixels inside this square
-#             if roi_w.mean() > 30:      # 30 ≈ (0.12 × 255)
-#                 occ[r, c] = 1
-#             elif roi_b.mean() > 30:
-#                 occ[r, c] = 2
-#     return occ
-
 def occupancy_hsv(board_img: np.ndarray) -> np.ndarray:
     """Return 8×8 matrix: 0=empty, 1=white piece, 2=black piece."""
     hsv = cv.cvtColor(board_img, cv.COLOR_BGR2HSV)
@@ -178,23 +151,6 @@ _TRANSFORM = transforms.Compose([
     transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),
 ])
 
-
-# def occupancy_cnn(board_img: np.ndarray) -> np.ndarray:
-#     """Return occupancy matrix using the trained CNN classifier."""
-#     device = 'cuda' if torch.cuda.is_available() else 'cpu'
-#     model = _load_cnn_model(device)
-#     sq = CALIB_SIZE // 8
-#     occ = np.zeros((8, 8), np.int8)
-#     with torch.no_grad():
-#         for r in range(8):
-#             for c in range(8):
-#                 crop = board_img[r * sq:(r + 1) * sq, c * sq:(c + 1) * sq]
-#                 crop = cv.resize(crop, (64, 64))
-#                 crop = cv.cvtColor(crop, cv.COLOR_BGR2RGB)
-#                 inp = _TRANSFORM(crop).unsqueeze(0).to(device)
-#                 pred = model(inp).argmax(1).item()
-#                 occ[r, c] = pred
-#     return occ
 
 def occupancy_cnn(board_img: np.ndarray, tile: int = 64) -> np.ndarray:
     """

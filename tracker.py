@@ -1,5 +1,6 @@
 import numpy as np
 import chess
+from dataclasses import dataclass, asdict
 
 # ---------------------------------------------------------------------------
 # Helper – map between (row, col) indices and algebraic square names ("e4", …)
@@ -23,88 +24,123 @@ def _board_to_occ(board: chess.Board) -> np.ndarray:
         occ[rank, file] = 1 if piece.color == chess.WHITE else 2
     return occ
 
+@dataclass
+class GameState:
+    game_over: bool = False
+    # checks / mates
+    check: bool = False
+    checkmate: bool = False
+    # automatic draws
+    stalemate: bool = False
+    insufficient_material: bool = False
+    fivefold_repetition: bool = False         # auto
+    seventyfive_moves: bool = False           # auto
+    # claimable draws
+    threefold_claimable: bool = False
+    fifty_moves_claimable: bool = False
+    # summary/result
+    result: str | None = None                 # "1-0", "0-1", "1/2-1/2"
+    termination: str | None = None            # e.g. "CHECKMATE", "DRAW_AGREEMENT"
+    winner: str | None = None                 # "white" | "black" | None
 
 class SquareTracker:
-    """Track moves by *occupancy‑only* board diffs.
-
-    Initialise with the standard starting position (or any FEN).  On every
-    call to :pymeth:`update`, feed the newly detected occupancy matrix.
-    The method tries to find *exactly one* legal move whose resulting board
-    matches the new occupancy.  If found, that move is pushed and returned.
-
-    The tracker assumes **queen promotion** when multiple legal promotions
-    would otherwise produce identical occupancy (empty/white/black only).
-    """
-
     def __init__(self, fen: str | None = None):
-        self.board: chess.Board = chess.Board(fen) if fen else chess.Board()
-        self.prev: np.ndarray = _board_to_occ(self.board)
+        self.board = chess.Board(fen) if fen else chess.Board()
+        self.prev = _board_to_occ(self.board)
         self.history: list[str] = []
+        self._forced_result: dict | None = None
 
-    # ---------------------------------------------------------------------
-    # Public helpers
-    # ---------------------------------------------------------------------
-    def reset(self, fen: str | None = None) -> None:
-        """Set a fresh game state and sync the occupancy baseline."""
+    def reset(self, fen: str | None = None):
         self.board.set_fen(fen) if fen else self.board.reset()
         self.prev = _board_to_occ(self.board)
         self.history.clear()
+        self._forced_result = None
 
-    def get_history(self) -> list[str]:
-        """Return the SAN history of all recognised moves."""
-        return self.history.copy()
+    def get_history(self): return self.history.copy()
 
-    # ---------------------------------------------------------------------
-    # Core – consume a new 8 × 8 occupancy matrix
-    # ---------------------------------------------------------------------
+    # --- new: force results for resignation/draws ---
+    def _force_result(self, *, result: str, termination: str, winner: str | None):
+        self._forced_result = {"result": result, "termination": termination, "winner": winner}
+
+    def resign(self, color: str):
+        color = color.lower()
+        if color not in ("white", "black"):
+            raise ValueError("color must be 'white' or 'black'")
+        self._force_result(
+            result="0-1" if color == "white" else "1-0",
+            termination="RESIGNATION",
+            winner="black" if color == "white" else "white",
+        )
+
+    def agree_draw(self):
+        self._force_result(result="1/2-1/2", termination="DRAW_AGREEMENT", winner=None)
+
+    def claim_draw(self):
+        # Prefer threefold, else fifty-move, else reject
+        if self.board.can_claim_threefold_repetition():
+            self._force_result(result="1/2-1/2", termination="THREEFOLD_REPETITION", winner=None)
+        elif self.board.can_claim_fifty_moves():
+            self._force_result(result="1/2-1/2", termination="FIFTY_MOVES", winner=None)
+        else:
+            raise ValueError("No draw can be claimed at this position.")
+
+    def _state(self) -> GameState:
+        # Safe getattr for older python-chess versions
+        fivefold = getattr(self.board, "is_fivefold_repetition", lambda: False)()
+        mv75     = getattr(self.board, "is_seventyfive_moves", lambda: False)()
+        st = GameState(
+            check=self.board.is_check(),
+            checkmate=self.board.is_checkmate(),
+            stalemate=self.board.is_stalemate(),
+            insufficient_material=self.board.is_insufficient_material(),
+            fivefold_repetition=fivefold,
+            seventyfive_moves=mv75,
+            threefold_claimable=self.board.can_claim_threefold_repetition(),
+            fifty_moves_claimable=self.board.can_claim_fifty_moves(),
+        )
+        oc = self.board.outcome(claim_draw=True)  # includes auto draws
+        if oc:
+            st.game_over = True
+            st.result = oc.result()
+            st.termination = oc.termination.name
+            st.winner = "white" if oc.winner is True else "black" if oc.winner is False else None
+        if self._forced_result:  # overrides (agreement / claim / resign)
+            st.game_over = True
+            st.result = self._forced_result["result"]
+            st.termination = self._forced_result["termination"]
+            st.winner = self._forced_result["winner"]
+        return st
+
+    # ... keep your update() with promotion dedup as we discussed ...
     def update(self, new_occ: np.ndarray):
-        """Process *one* frame.
-
-        Returns
-        -------
-        tuple | (None, None)
-            ``(uci, fen)`` of the recognised move, or ``(None, None)`` if no
-            single legal move explains the change (noise frame or ambiguous).
-        """
-        # Fast‑path: identical occupancy → nothing happened.
         if np.array_equal(new_occ, self.prev):
-            return None, None
+            return None, None, asdict(self._state())
 
-        # ------------------------------------------------------------------
-        # Brute‑force search: try every legal move & compare the resulting
-        # occupancy.  Works for captures, promotions, castling, en‑passant,
-        # and disambiguates multiple changed squares naturally.
-        # ------------------------------------------------------------------
         candidate = None
-        tested = set()  # (from, to, promo) keys after normalisation
+        tested = set()
         for mv in self.board.legal_moves:
             norm = mv
             if self._is_pawn_promotion(mv):
                 norm = chess.Move(mv.from_square, mv.to_square, promotion=chess.QUEEN)
-
             key = (norm.from_square, norm.to_square, norm.promotion or 0)
-            if key in tested:
-                continue
+            if key in tested: continue
             tested.add(key)
 
-            next_board = self.board.copy(stack=False)
-            next_board.push(norm)
-            if np.array_equal(_board_to_occ(next_board), new_occ):
+            nb = self.board.copy(stack=False)
+            nb.push(norm)
+            if np.array_equal(_board_to_occ(nb), new_occ):
                 if candidate is not None:
-                    # Two truly different moves lead to the same occupancy
-                    return None, None
+                    return None, None, asdict(self._state())
                 candidate = norm
 
         if candidate is None:
-            # No legal move matches → likely CV noise, ignore frame.
-            return None, None
+            return None, None, asdict(self._state())
 
-        # Push the single matching move.
-        san_before = self.board.san(candidate)  # SAN before pushing
+        san_before = self.board.san(candidate)
         self.board.push(candidate)
         self.history.append(san_before)
         self.prev = new_occ.copy()
-        return candidate.uci(), self.board.fen()
+        return candidate.uci(), self.board.fen(), asdict(self._state())
 
     # ------------------------------------------------------------------
     # Internal utilities

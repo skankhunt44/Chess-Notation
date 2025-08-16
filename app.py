@@ -17,6 +17,9 @@ from vision import find_board, warp_board, occupancy_cnn, draw_board_overlay, as
 from tracker import SquareTracker
 from autolabel import learn_proto, auto_label
 
+import asyncio
+from dataclasses import asdict
+
 # --------------------------------------------------------------------------------------
 # App & globals
 # --------------------------------------------------------------------------------------
@@ -180,36 +183,27 @@ async def ws_endpoint(ws: WebSocket):
     await ws.accept()
 
     async def keepalive():
-        # App-level heartbeat message so proxies don't think we're idle.
         while True:
             await asyncio.sleep(HEARTBEAT_EVERY_S)
             try:
                 await ws.send_json({"type": "ping", "t": time.time()})
             except Exception:
-                break  # socket likely gone
+                break
 
-    ka_task = app.state.__dict__.get("_ka_task")
-    if ka_task is None or ka_task.done():
-        ka_task = app.state._ka_task = None  # per-connection task below
-    ka_task = app.state._ka_task = None  # ensure not shared across conns
-    ka_task = app.state._ka_task = None  # (explicit reset to avoid confusion)
-    ka_task = None  # create per-connection one:
-    ka_task = __import__("asyncio").create_task(keepalive())
+    ka_task = asyncio.create_task(keepalive())
 
     try:
         while True:
-            # If the client stops talking, time out instead of hanging forever.
             try:
-                data = await __import__("asyncio").wait_for(ws.receive_text(), timeout=RECEIVE_TIMEOUT_S)
-            except __import__("asyncio").TimeoutError:
-                await ws.close(code=1001)  # going away
+                data = await asyncio.wait_for(ws.receive_text(), timeout=RECEIVE_TIMEOUT_S)
+            except asyncio.TimeoutError:
+                await ws.close(code=1001)
                 break
 
-            # Ignore optional client heartbeat/pong
             if data.strip() in ("PING", '{"type":"pong"}'):
                 continue
 
-            # Decode
+            # Decode image
             try:
                 frame = _decode_image(data)
             except ValueError:
@@ -224,46 +218,73 @@ async def ws_endpoint(ws: WebSocket):
                 t0 = time.perf_counter()
                 board_img, _ = warp_board(frame, _corners)
                 occ = occupancy_cnn(board_img)
-                move, fen = tracker.update(occ)
+                move, fen, state = tracker.update(occ)   # ← unpack 3
                 ms = int((time.perf_counter() - t0) * 1000)
 
-                # Optional: very occasional ASCII dump for debugging
+                # (optional debug)
                 log_every = float(os.getenv("LOG_EVERY", "1"))
                 if log_every > 0:
                     now = time.time()
                     if int(now / log_every) != int((now - 0.05) / log_every):
                         print(ascii_occ(occ))
 
-                # # Rate-limited debug image dumps (enable with DEBUG_WARP=1)
-                # global _last_dump
-                # now = time.time()
-                # if os.getenv("DEBUG_WARP") == "1" and (now - _last_dump) > DEBUG_DUMP_EVERY_S:
-                #     cv.imwrite("calib_ok.jpg", frame)
-                #     cv.imwrite("calib_warp.jpg", board_img)
-                #     _last_dump = now
-
-                return move, fen, ms
+                return move, fen, state, ms
 
             try:
-                move, fen, ms = await run_in_threadpool(_process)
+                move, fen, state, ms = await run_in_threadpool(_process)
             except Exception as e:
-                await ws.send_json({"err": f"server error: {type(e).__name__}"})
+                await ws.send_json({"err": f"server error: {type(e).__name__}", "detail": str(e)})
                 continue
 
-            # payload = {"ms": timing["total"], "timing": timing}  # the client can show Proc X ms
-            payload = {"ms": ms}
+            # Always send state so the UI can show check/claimable-draw flags
+            payload = {"ms": ms, "state": state}
+
             if move:
                 payload.update({"move": move, "fen": fen, "history": tracker.get_history()})
                 print(move)
-                
             else:
                 payload["noop"] = True
+
             await ws.send_json(payload)
 
     except WebSocketDisconnect:
         pass
     finally:
-        ka_task.cancel()
+        try:
+            ka_task.cancel()
+        except Exception:
+            pass
+
+
+@app.post("/resign/{color}")
+def api_resign(color: str):
+    try:
+        tracker.resign(color)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    st = tracker._state()
+    return {"state": asdict(st), "fen": tracker.board.fen(), "history": tracker.get_history()}
+
+@app.post("/draw/agree")
+def api_draw_agree():
+    tracker.agree_draw()
+    st = tracker._state()
+    return {"state": asdict(st), "fen": tracker.board.fen(), "history": tracker.get_history()}
+
+@app.post("/draw/claim")
+def api_draw_claim():
+    try:
+        tracker.claim_draw()
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    st = tracker._state()
+    return {"state": asdict(st), "fen": tracker.board.fen(), "history": tracker.get_history()}
+
+@app.post("/reset")
+def api_reset():
+    tracker.reset()
+    return {"fen": tracker.board.fen(), "history": tracker.get_history()}
+
 
 # --------------------------------------------------------------------------------------
 # Static site
