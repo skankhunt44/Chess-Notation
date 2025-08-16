@@ -102,6 +102,7 @@ async def calibrate(image_b64: str = Body(..., media_type="text/plain")):
 
     cv.imwrite("calib_dbg_ok.jpg", draw_board_overlay(frame, corners))
     _corners = corners
+    tracker.reset()
 
     sd = _start_new_session()
     np.save(sd / "corners.npy", np.array(_corners, dtype=np.float32))

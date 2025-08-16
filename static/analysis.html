@@ -22,6 +22,7 @@
     th, td{padding:8px 10px; border-bottom:1px solid #edf2f7; text-align:left; font-size:.95rem;}
     tr:hover{background:#f8fafc; cursor:pointer;}
     .tag{font-size:.75rem; padding:2px 6px; border-radius:999px;}
+    .tag.best{background:#dcfce7; border:1px solid #86efac; color:#166534; font-weight:600;}
     .tag.good{background:#ecfeff; border:1px solid #a5f3fc; color:#155e75;}
     .tag.inaccuracy{background:#fff7ed; border:1px solid #fed7aa; color:#9a3412;}
     .tag.mistake{background:#fef2f2; border:1px solid #fecaca; color:#991b1b;}
@@ -238,9 +239,9 @@
       // Fill summary + pgn
       summaryPill.style.display = '';
       summaryPill.textContent =
-        `Result ${analysis.summary.result} · ACPL W ${analysis.summary.acpl_white} / B ${analysis.summary.acpl_black} ` +
-        `· W bl/mk/inacc ${analysis.summary.white.blunder}/${analysis.summary.white.mistake}/${analysis.summary.white.inaccuracy} ` +
-        `· B bl/mk/inacc ${analysis.summary.black.blunder}/${analysis.summary.black.mistake}/${analysis.summary.black.inaccuracy}`;
+        `Result ${analysis.summary.result} · ` +
+        `W best/bl/mk/inacc ${analysis.summary.white.best}/${analysis.summary.white.blunder}/${analysis.summary.white.mistake}/${analysis.summary.white.inaccuracy} · ` +
+        `B best/bl/mk/inacc ${analysis.summary.black.best}/${analysis.summary.black.blunder}/${analysis.summary.black.mistake}/${analysis.summary.black.inaccuracy}`;
 
       resultPill.style.display = '';
       resultPill.textContent = `Moves: ${analysis.moves.length}`;
