@@ -1,0 +1,595 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>Training Data Collection • Chess Tracker</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
+        
+        :root {
+            --primary: #6366f1;
+            --primary-dark: #4f46e5;
+            --secondary: #8b5cf6;
+            --accent: #06b6d4;
+            --success: #10b981;
+            --warning: #f59e0b;
+            --danger: #ef4444;
+            --glass: rgba(255, 255, 255, 0.08);
+            --glass-border: rgba(255, 255, 255, 0.12);
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: 'Inter', -apple-system, system-ui, sans-serif;
+            background: linear-gradient(135deg, #0f0f23 0%, #1a1a2e 25%, #16213e 50%, #0f3460 100%);
+            min-height: 100vh; color: white; overflow-x: hidden;
+            -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale;
+        }
+
+        body::before {
+            content: ''; position: fixed; inset: 0;
+            background: radial-gradient(circle at 20% 80%, rgba(99,102,241,.15) 0%, transparent 50%),
+                        radial-gradient(circle at 80% 20%, rgba(139,92,246,.1) 0%, transparent 50%);
+            pointer-events: none; z-index: 0;
+        }
+
+        .container {
+            position: relative; z-index: 1; max-width: 600px; margin: 0 auto; padding: 20px;
+            display: flex; flex-direction: column; gap: 24px;
+        }
+
+        .header { text-align: center; margin-bottom: 10px; }
+        .logo {
+            width: 48px; height: 48px; margin: 0 auto 12px;
+            background: linear-gradient(135deg, var(--primary), var(--secondary));
+            border-radius: 16px; display: flex; align-items: center; justify-content: center;
+            font-size: 24px; box-shadow: 0 8px 32px rgba(99, 102, 241, 0.3);
+        }
+        .title {
+            font-size: 28px; font-weight: 700;
+            background: linear-gradient(135deg,#fff 0%,#a8a8a8 100%);
+            -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text;
+            margin-bottom: 6px; letter-spacing: -1px;
+        }
+        .subtitle { color: rgba(255,255,255,.6); font-size: 16px; font-weight: 400; }
+
+        .card {
+            background: var(--glass); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+            border: 1px solid var(--glass-border); border-radius: 20px; padding: 24px; position: relative;
+        }
+
+        .camera-section {
+            background: var(--glass); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+            border: 1px solid var(--glass-border); border-radius: 24px; padding: 20px;
+            position: relative; overflow: hidden;
+        }
+        .camera-section::before {
+            content: ''; position: absolute; top: 0; left: -100%; width: 100%; height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.05), transparent);
+            animation: shine 3s ease-in-out infinite;
+        }
+        @keyframes shine { 0%{left:-100%} 50%{left:-100%} 100%{left:100%} }
+
+        .camera-container {
+            border-radius: 16px; overflow: hidden; background: #000; position: relative;
+            aspect-ratio: 4/3; margin-bottom: 16px;
+        }
+        #cam { width: 100%; height: 100%; object-fit: cover; }
+        .camera-overlay { position: absolute; inset: 0; background: linear-gradient(45deg, transparent, rgba(99,102,241,0.1), transparent); opacity: 0; transition: opacity .3s; }
+        .camera-container:hover .camera-overlay{ opacity: 1; }
+
+        .btn {
+            background: var(--glass); border: 1px solid var(--glass-border); border-radius: 12px; padding: 12px 20px;
+            font-family: inherit; font-size: 14px; font-weight: 500; color: white; cursor: pointer;
+            transition: all .2s cubic-bezier(.4,0,.2,1); position: relative; overflow: hidden;
+            backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+            display: inline-flex; align-items: center; justify-content: center; gap: 8px; white-space: nowrap;
+        }
+        .btn::before{ content:''; position:absolute; top:0; left:-100%; width:100%; height:100%;
+            background: linear-gradient(90deg,transparent,rgba(255,255,255,.1),transparent); transition:left .3s; }
+        .btn:hover::before{ left:100% }
+        .btn:hover { transform: translateY(-1px); background: rgba(255,255,255,.12); border-color: rgba(255,255,255,.18); }
+        .btn:active{ transform: translateY(0) }
+        .btn-primary { background: linear-gradient(135deg, var(--primary), var(--primary-dark)); border: none; box-shadow: 0 4px 20px rgba(99,102,241,.4); }
+        .btn-primary:hover { background: linear-gradient(135deg, var(--primary-dark), #3730a3); transform: translateY(-2px); box-shadow: 0 8px 30px rgba(99,102,241,.5); }
+        .btn-success { background: linear-gradient(135deg, var(--success), #059669); border: none; box-shadow: 0 4px 20px rgba(16,185,129,.3); }
+        .btn-success:hover { background: linear-gradient(135deg, #059669, #047857); transform: translateY(-2px); box-shadow: 0 8px 30px rgba(16,185,129,.4); }
+        .btn-warning { background: linear-gradient(135deg, var(--warning), #d97706); border: none; box-shadow: 0 4px 20px rgba(245,158,11,.3); }
+        .btn-danger { background: linear-gradient(135deg, var(--danger), #dc2626); border: none; box-shadow: 0 4px 20px rgba(239,68,68,.3); }
+        .btn:disabled { opacity: .4; cursor: not-allowed; transform: none !important; box-shadow: none !important; }
+
+        .btn-group { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+
+        .preview-container { 
+            border-radius: 16px; overflow: hidden; background: rgba(0,0,0,.3); 
+            border: 1px solid var(--glass-border); margin: 20px 0; 
+        }
+        #warp { width: 100%; height: auto; display: block; }
+
+        .grid-container { 
+            background: rgba(0,0,0,.2); border-radius: 16px; padding: 20px; 
+            border: 1px solid var(--glass-border); margin: 20px 0; 
+        }
+        .grid-title { font-size: 16px; font-weight: 600; margin-bottom: 16px; color: white; text-align: center; }
+        .grid-subtitle { font-size: 13px; color: rgba(255,255,255,.6); text-align: center; margin-bottom: 20px; }
+
+        #grid { display: grid; grid-template-columns: repeat(8, 1fr); gap: 4px; max-width: 400px; margin: 0 auto; }
+        #grid button {
+            aspect-ratio: 1; border-radius: 8px; border: 1px solid var(--glass-border); background: var(--glass);
+            font-size: 12px; font-weight: 600; color: white; transition: all .2s ease; cursor: pointer;
+            backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+        }
+        #grid button:hover { background: var(--primary); transform: scale(1.05); box-shadow: 0 4px 12px rgba(99,102,241,.4); }
+
+        .save-container { text-align: center; margin-top: 20px; }
+        .save-btn { 
+            background: linear-gradient(135deg, var(--success), #059669); border: none; padding: 16px 32px; 
+            font-size: 16px; font-weight: 600; border-radius: 16px; 
+            box-shadow: 0 8px 25px rgba(16,185,129,.4); 
+        }
+        .save-btn:hover { 
+            background: linear-gradient(135deg, #059669, #047857); transform: translateY(-2px); 
+            box-shadow: 0 12px 35px rgba(16,185,129,.5); 
+        }
+
+        .status {
+            background: linear-gradient(135deg, rgba(99,102,241,.15), rgba(139,92,246,.1));
+            border: 1px solid rgba(99,102,241,.2); border-radius: 12px; padding: 12px 20px; 
+            text-align: center; font-weight: 500; color: white;
+            backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+        }
+
+        .loading { position: relative; overflow: hidden; }
+        .loading::after { 
+            content:''; position:absolute; top:0; left:-100%; width:100%; height:100%; 
+            background: linear-gradient(90deg,transparent,rgba(255,255,255,.2),transparent); 
+            animation: loading-shimmer 1.5s infinite; 
+        }
+        @keyframes loading-shimmer { 0%{left:-100%} 100%{left:100%} }
+
+        .legend { display: flex; justify-content: center; gap: 16px; margin: 16px 0; flex-wrap: wrap; }
+        .legend-item { display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: rgba(255,255,255,.05); border-radius: 20px; font-size: 12px; font-weight: 500; }
+        .legend-color { width: 12px; height: 12px; border-radius: 50%; }
+        .legend-empty { background: var(--glass); } .legend-white { background: #ffffff; } .legend-black { background: #000000; }
+
+        @media (max-width: 640px) {
+            .container { padding: 16px; }
+            .btn-group { flex-direction: column; align-items: center; }
+            .btn { min-width: 200px; }
+            .legend { flex-direction: column; align-items: center; }
+        }
+
+        @keyframes fadeIn { from {opacity:0; transform: translateY(20px)} to {opacity:1; transform: translateY(0)} }
+        .card, .camera-section, .preview-container, .grid-container { animation: fadeIn .6s cubic-bezier(.4,0,.2,1) forwards; }
+        .card:nth-child(2){ animation-delay: .1s } 
+        .card:nth-child(3){ animation-delay: .2s } 
+        .card:nth-child(4){ animation-delay: .3s }
+
+        .back-nav {
+            position: fixed;
+            top: 20px;
+            left: 20px;
+            z-index: 10;
+        }
+        .back-btn {
+            background: var(--glass);
+            border: 1px solid var(--glass-border);
+            border-radius: 12px;
+            padding: 8px 12px;
+            font-family: inherit;
+            font-size: 14px;
+            font-weight: 500;
+            color: white;
+            cursor: pointer;
+            transition: all .2s cubic-bezier(.4,0,.2,1);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .back-btn:hover {
+            transform: translateY(-1px);
+            background: rgba(255,255,255,.12);
+            border-color: rgba(255,255,255,.18);
+        }
+    </style>
+</head>
+
+<body>
+    <div class="back-nav">
+        <button class="back-btn" onclick="history.back()">← Back</button>
+    </div>
+
+    <div class="container">
+        <div class="header">
+            <div class="logo">🎯</div>
+            <h1 class="title">Training Data Collection</h1>
+            <p class="subtitle">Create labeled chess board samples for AI training</p>
+        </div>
+
+        <div class="camera-section">
+            <div class="camera-container">
+                <video id="cam" autoplay muted playsinline></video>
+                <div class="camera-overlay"></div>
+            </div>
+            
+            <div class="btn-group">
+                <button id="enableCam" class="btn btn-primary">📹 Enable Camera</button>
+                <button id="calibrateBtn" class="btn" disabled>🎯 Calibrate Board</button>
+                <button id="captureBtn" class="btn btn-success" disabled>📸 Capture & Label</button>
+            </div>
+            
+            <div class="status" id="status">Enable camera to start collecting training data</div>
+        </div>
+
+        <div class="preview-container" id="previewContainer" style="display: none;">
+            <canvas id="warp" width="400" height="400"></canvas>
+            <div style="text-align: center; padding: 10px; font-size: 12px; color: rgba(255,255,255,0.6);">
+                Captured chess board ready for labeling
+            </div>
+        </div>
+
+        <div class="grid-container" id="gridContainer" style="display: none;">
+            <div class="grid-title">Label Each Square</div>
+            <div class="grid-subtitle">Click each square to cycle through: Empty → White → Black</div>
+            
+            <div class="legend">
+                <div class="legend-item"><div class="legend-color legend-empty"></div><span>E = Empty</span></div>
+                <div class="legend-item"><div class="legend-color legend-white"></div><span>W = White</span></div>
+                <div class="legend-item"><div class="legend-color legend-black"></div><span>B = Black</span></div>
+            </div>
+            
+            <div id="grid"></div>
+            
+            <div class="save-container">
+                <button id="saveBtn" class="btn save-btn">💾 Save Training Sample</button>
+                <button id="newSampleBtn" class="btn btn-warning" style="margin-left: 12px;">🔄 Capture Another</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ---------- Elements ----------
+        const videoEl = document.getElementById('cam');
+        const statusEl = document.getElementById('status');
+        const enableBtn = document.getElementById('enableCam');
+        const calibrateBtn = document.getElementById('calibrateBtn');
+        const captureBtn = document.getElementById('captureBtn');
+        const saveBtn = document.getElementById('saveBtn');
+        const newSampleBtn = document.getElementById('newSampleBtn');
+        const warpCanvas = document.getElementById('warp');
+        const gridDiv = document.getElementById('grid');
+        const previewContainer = document.getElementById('previewContainer');
+        const gridContainer = document.getElementById('gridContainer');
+
+        // ---------- State ----------
+        let stream = null;
+        let track = null;
+        let isCalibrated = false;
+        let curLabels = null;
+        let curWarp = null;
+
+        // ---------- Helpers ----------
+        const isSecure = () => (window.isSecureContext || location.protocol === 'https:' || location.hostname === 'localhost');
+        
+        const blobToB64 = (blob) => new Promise(r => {
+            const fr = new FileReader();
+            fr.onload = () => r(fr.result);
+            fr.readAsDataURL(blob);
+        });
+
+        async function grabFrame(videoTrack, canvas) {
+            if ('ImageCapture' in window) {
+                try {
+                    const cap = new ImageCapture(videoTrack);
+                    if (cap.grabFrame) return cap.grabFrame();
+                } catch { /* fallback */ }
+            }
+            canvas = canvas || (grabFrame._c ||= document.createElement('canvas'));
+            const srcW = videoEl.videoWidth || 640;
+            const srcH = videoEl.videoHeight || 480;
+            const MAX_W = 960;
+            const scale = Math.min(1, MAX_W / srcW);
+            canvas.width = Math.round(srcW * scale);
+            canvas.height = Math.round(srcH * scale);
+            const ctx = canvas.getContext('2d', { willReadFrequently: false });
+            ctx.drawImage(videoEl, 0, 0, canvas.width, canvas.height);
+            return new Promise(r => canvas.toBlob(r, 'image/jpeg', 0.65));
+        }
+
+        async function frameToBlob(frame) {
+            if (frame instanceof Blob) return frame;
+            if (frame && frame.convertToBlob) return frame.convertToBlob();
+            const c = document.createElement('canvas');
+            c.width = frame.width; c.height = frame.height;
+            c.getContext('2d').drawImage(frame, 0, 0);
+            return new Promise(r => c.toBlob(r, 'image/jpeg', 0.65));
+        }
+
+        function setStatus(msg) {
+            statusEl.textContent = msg;
+            console.log('[training]', msg);
+        }
+
+        // ---------- Camera Functions ----------
+        async function requestCamera() {
+            if (!navigator.mediaDevices?.getUserMedia) {
+                setStatus('Camera API not supported');
+                return;
+            }
+            if (!isSecure()) {
+                setStatus('HTTPS required for camera access');
+                return;
+            }
+
+            enableBtn.classList.add('loading');
+
+            // Try back camera first, then any camera as fallback
+            const tries = [
+                { video: { facingMode: { ideal: 'environment' } }, audio: false },
+                { video: true, audio: false }
+            ];
+
+            let success = false;
+            for (const constraints of tries) {
+                try {
+                    stream = await navigator.mediaDevices.getUserMedia(constraints);
+                    success = true;
+                    break;
+                } catch (e) {
+                    console.warn('getUserMedia failed with', constraints, e);
+                }
+            }
+
+            if (!success) {
+                setStatus('Camera permission denied or no camera found. Check browser settings.');
+                enableBtn.classList.remove('loading');
+                return;
+            }
+
+            try {
+                videoEl.srcObject = stream;
+
+                // Wait for video metadata to load
+                await new Promise(resolve => {
+                    if (videoEl.readyState >= 2) return resolve();
+                    const onLoad = () => {
+                        videoEl.removeEventListener('loadedmetadata', onLoad);
+                        resolve();
+                    };
+                    videoEl.addEventListener('loadedmetadata', onLoad);
+                });
+
+                try { 
+                    await videoEl.play(); 
+                } catch (e) {
+                    console.warn('Video play failed:', e);
+                }
+
+                track = stream.getVideoTracks()[0];
+                console.log('Camera track acquired:', track.label);
+
+                setStatus('Camera ready • Point at chess board and calibrate');
+                calibrateBtn.disabled = false;
+                enableBtn.textContent = '✅ Camera Active';
+                enableBtn.disabled = true;
+
+            } catch (err) {
+                console.error('Camera setup error:', err);
+                setStatus(`Camera error: ${err.message || err}`);
+            } finally {
+                enableBtn.classList.remove('loading');
+            }
+        }
+
+        // ---------- Calibration ----------
+        async function calibrateBoard() {
+            if (!track) {
+                setStatus('Please enable camera first');
+                return;
+            }
+
+            try {
+                calibrateBtn.classList.add('loading');
+                setStatus('Calibrating board corners...');
+
+                const frame = await grabFrame(track);
+                const blob = await frameToBlob(frame);
+                const b64 = await blobToB64(blob);
+
+                const res = await fetch('/calibrate', { 
+                    method: 'POST', 
+                    body: b64 
+                });
+
+                if (!res.ok) {
+                    const errorText = await res.text();
+                    setStatus('Calibration failed • Make sure entire board is visible');
+                    console.error('Calibration error:', errorText);
+                    return;
+                }
+
+                isCalibrated = true;
+                setStatus('Board calibrated successfully! Now you can capture training samples.');
+                calibrateBtn.textContent = '✅ Calibrated';
+                calibrateBtn.disabled = true;
+                captureBtn.disabled = false;
+
+            } catch (err) {
+                console.error('Calibration error:', err);
+                setStatus(`Calibration failed: ${err.message}`);
+            } finally {
+                calibrateBtn.classList.remove('loading');
+            }
+        }
+
+        // ---------- Capture & Analysis ----------
+        async function captureAndAnalyze() {
+            if (!track || !isCalibrated) {
+                setStatus('Please calibrate the board first');
+                return;
+            }
+
+            try {
+                captureBtn.classList.add('loading');
+                setStatus('Capturing and analyzing board position...');
+
+                const frame = await grabFrame(track);
+                const blob = await frameToBlob(frame);
+                const b64 = await blobToB64(blob);
+
+                const res = await fetch('/propose-labels', { 
+                    method: 'POST', 
+                    body: b64 
+                });
+
+                if (!res.ok) {
+                    const errorText = await res.text();
+                    throw new Error(`Analysis failed: ${errorText}`);
+                }
+
+                const { labels, warp_png } = await res.json();
+                curLabels = labels;
+                curWarp = warp_png;
+
+                // Display the warped board image
+                const img = new Image();
+                img.onload = () => {
+                    const ctx = warpCanvas.getContext('2d');
+                    ctx.clearRect(0, 0, 400, 400);
+                    ctx.drawImage(img, 0, 0, 400, 400);
+                    previewContainer.style.display = 'block';
+                    gridContainer.style.display = 'block';
+                    renderGrid();
+                    setStatus('Board captured! Review and correct the labels below, then save.');
+                };
+                img.src = 'data:image/png;base64,' + warp_png;
+
+            } catch (e) {
+                console.error('Capture error:', e);
+                setStatus(`Capture failed: ${e.message}`);
+            } finally {
+                captureBtn.classList.remove('loading');
+            }
+        }
+
+        // ---------- Grid Labeling ----------
+        function renderGrid() {
+            gridDiv.innerHTML = '';
+            const files = ['a','b','c','d','e','f','g','h'];
+            const ranks = ['8','7','6','5','4','3','2','1'];
+            
+            ranks.forEach((rank, rIdx) => {
+                files.forEach((file, fIdx) => {
+                    const idx = rIdx * 8 + fIdx;
+                    const cell = document.createElement('button');
+                    cell.textContent = curLabels[idx];
+                    cell.title = `${file}${rank}`;
+                    updateCellStyle(cell, curLabels[idx]);
+                    cell.onclick = () => {
+                        const order = ['E','W','B'];
+                        curLabels[idx] = order[(order.indexOf(curLabels[idx]) + 1) % 3];
+                        cell.textContent = curLabels[idx];
+                        updateCellStyle(cell, curLabels[idx]);
+                    };
+                    gridDiv.appendChild(cell);
+                });
+            });
+        }
+
+        function updateCellStyle(cell, label) {
+            cell.style.background = '';
+            cell.style.color = 'white';
+            cell.style.borderColor = 'var(--glass-border)';
+            if (label === 'W') {
+                cell.style.background = 'rgba(255,255,255,0.9)';
+                cell.style.color = 'black';
+                cell.style.borderColor = 'rgba(255,255,255,0.5)';
+            } else if (label === 'B') {
+                cell.style.background = 'rgba(0,0,0,0.9)';
+                cell.style.color = 'white';
+                cell.style.borderColor = 'rgba(255,255,255,0.3)';
+            }
+        }
+
+        // ---------- Save Sample ----------
+        async function saveSample() {
+            try {
+                if (!curLabels) {
+                    setStatus('Nothing to save yet. Capture a board position first.');
+                    return;
+                }
+                
+                saveBtn.classList.add('loading');
+                setStatus('Saving training sample...');
+                
+                const res = await fetch('/save-sample', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ 
+                        labels: curLabels, 
+                        image_b64: curWarp || '' 
+                    })
+                });
+                
+                if (res.ok) {
+                    setStatus('Training sample saved successfully! ✅');
+                    // Reset for next sample
+                    setTimeout(() => {
+                        previewContainer.style.display = 'none';
+                        gridContainer.style.display = 'none';
+                        curLabels = null;
+                        curWarp = null;
+                        captureBtn.disabled = false;
+                        setStatus('Ready to capture another training sample');
+                    }, 1500);
+                } else {
+                    const errorText = await res.text();
+                    setStatus(`Failed to save: ${errorText}`);
+                }
+            } catch (e) {
+                console.error('Save error:', e);
+                setStatus(`Error saving: ${e.message}`);
+            } finally {
+                saveBtn.classList.remove('loading');
+            }
+        }
+
+        function prepareNewSample() {
+            previewContainer.style.display = 'none';
+            gridContainer.style.display = 'none';
+            curLabels = null;
+            curWarp = null;
+            captureBtn.disabled = false;
+            setStatus('Ready to capture another training sample');
+        }
+
+        // ---------- Event Listeners ----------
+        enableBtn.addEventListener('click', requestCamera);
+        calibrateBtn.addEventListener('click', calibrateBoard);
+        captureBtn.addEventListener('click', captureAndAnalyze);
+        saveBtn.addEventListener('click', saveSample);
+        newSampleBtn.addEventListener('click', prepareNewSample);
+
+        // ---------- Initial Setup ----------
+        if (!isSecure()) {
+            setStatus('HTTPS required for camera access • Use localhost or secure hosting');
+        }
+    </script>
+
+    <script>
+        // Debug console for mobile (optional)
+        (function () {
+            if (!/[?&]debug=1\b/.test(location.search)) return;
+            var s = document.createElement('script');
+            s.src = 'https://cdn.jsdelivr.net/npm/eruda';
+            s.onload = function () { eruda.init(); console.log('Eruda ready'); };
+            document.head.appendChild(s);
+        })();
+    </script>
+
+</body>
+</html>

@@ -1,531 +1,636 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Phone Chess Tracker (PoC)</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>Chess Tracker</title>
+    <link rel="stylesheet" href="/chessboardjs-1.0.0/css/chessboard-1.0.0.min.css">
+    <script src="/chessboardjs-1.0.0/js/jquery-3.7.1.min.js"></script>
+    <script src="/chessboardjs-1.0.0/js/chessboard-1.0.0.min.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
+        
+        :root {
+            --primary: #6366f1;
+            --primary-dark: #4f46e5;
+            --secondary: #8b5cf6;
+            --accent: #06b6d4;
+            --success: #10b981;
+            --warning: #f59e0b;
+            --danger: #ef4444;
+            --neutral-50: #fafafa;
+            --neutral-100: #f5f5f5;
+            --neutral-200: #e5e5e5;
+            --neutral-300: #d4d4d4;
+            --neutral-400: #a3a3a3;
+            --neutral-500: #737373;
+            --neutral-600: #525252;
+            --neutral-700: #404040;
+            --neutral-800: #262626;
+            --neutral-900: #171717;
+            --glass: rgba(255, 255, 255, 0.08);
+            --glass-border: rgba(255, 255, 255, 0.12);
+            --backdrop: rgba(0, 0, 0, 0.4);
+            --board-size: min(85vw, 360px);
+        }
 
-  <!-- chessboard.js (served locally in /chessboardjs-1.0.0) -->
-  <link rel="stylesheet" href="/chessboardjs-1.0.0/css/chessboard-1.0.0.min.css">
-  <script src="/chessboardjs-1.0.0/js/jquery-3.7.1.min.js"></script>
-  <script src="/chessboardjs-1.0.0/js/chessboard-1.0.0.min.js"></script>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
 
-  <style>
-    :root { --w: 400px; }
-    *{box-sizing:border-box}
-    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;margin:0;display:flex;flex-direction:column;align-items:center;padding:12px;gap:10px;background:#fafafa;color:#222}
-    h2{margin:4px 0 0}
-    #cam{display:block;max-width:100%;width:420px;background:#000;border-radius:8px}
-    #controls{display:flex;flex-wrap:wrap;gap:8px;margin:6px 0;justify-content:center}
-    button{padding:8px 12px;border:1px solid #ccc;border-radius:8px;background:#fff;cursor:pointer}
-    button:disabled{opacity:.5;cursor:not-allowed}
-    #board{width:var(--w);margin-top:6px}
-    #status{margin-top:4px;color:#444;text-align:center;min-height:1.4em}
-    #historyWrap{width:var(--w);max-width:100%}
-    #history{white-space:pre-wrap;margin-top:6px;width:100%;background:#fff;border:1px solid #e5e5e5;border-radius:8px;padding:8px;min-height:52px}
-    #warp{max-width:100%;border:1px solid #ddd;margin-top:8px;border-radius:8px}
-    #grid{margin-top:8px}
-    #grid button{width:40px;height:40px}
-    .row{display:flex;flex-wrap:wrap;gap:8px;justify-content:center}
-    .pill{font-size:.86rem;padding:4px 8px;border-radius:999px;background:#f1f5f9;border:1px solid #e2e8f0;color:#334155}
-    .spacer{height:6px}
-  </style>
+        body {
+            font-family: 'Inter', -apple-system, system-ui, sans-serif;
+            background: linear-gradient(135deg, #0f0f23 0%, #1a1a2e 25%, #16213e 50%, #0f3460 100%);
+            min-height: 100vh;
+            color: white;
+            overflow-x: hidden;
+            position: relative;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+        }
+
+        body::before {
+            content: '';
+            position: fixed;
+            inset: 0;
+            background: 
+                radial-gradient(circle at 20% 80%, rgba(99, 102, 241, 0.15) 0%, transparent 50%),
+                radial-gradient(circle at 80% 20%, rgba(139, 92, 246, 0.1) 0%, transparent 50%),
+                radial-gradient(circle at 40% 40%, rgba(6, 182, 212, 0.08) 0%, transparent 50%);
+            pointer-events: none;
+            z-index: 0;
+        }
+
+        .container {
+            position: relative;
+            z-index: 1;
+            max-width: 400px;
+            margin: 0 auto;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .header { text-align: center; margin-bottom: 10px; }
+
+        .logo {
+            width: 48px; height: 48px; margin: 0 auto 12px;
+            background: linear-gradient(135deg, var(--primary), var(--secondary));
+            border-radius: 16px; display: flex; align-items: center; justify-content: center;
+            font-size: 24px; box-shadow: 0 8px 32px rgba(99, 102, 241, 0.3);
+        }
+
+        .title {
+            font-size: 32px; font-weight: 800;
+            background: linear-gradient(135deg, #ffffff 0%, #a8a8a8 100%);
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+            margin-bottom: 6px; letter-spacing: -1px;
+        }
+
+        .subtitle { color: rgba(255, 255, 255, 0.6); font-size: 16px; font-weight: 400; }
+
+        .camera-section {
+            background: var(--glass); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+            border: 1px solid var(--glass-border); border-radius: 24px; padding: 20px;
+            position: relative; overflow: hidden;
+        }
+        .camera-section::before {
+            content: ''; position: absolute; top: 0; left: -100%; width: 100%; height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.05), transparent);
+            animation: shine 3s ease-in-out infinite;
+        }
+        @keyframes shine { 0%{left:-100%} 50%{left:-100%} 100%{left:100%} }
+
+        .camera-container {
+            border-radius: 16px; overflow: hidden; background: #000; position: relative;
+            aspect-ratio: 4/3; margin-bottom: 16px;
+        }
+        #cam { width: 100%; height: 100%; object-fit: cover; }
+        .camera-overlay { position: absolute; inset: 0; background: linear-gradient(45deg, transparent, rgba(99,102,241,0.1), transparent); opacity: 0; transition: opacity .3s; }
+        .camera-container:hover .camera-overlay{ opacity: 1; }
+
+        .btn {
+            background: var(--glass); border: 1px solid var(--glass-border); border-radius: 12px;
+            padding: 12px 20px; font-family: inherit; font-size: 14px; font-weight: 500; color: white;
+            cursor: pointer; transition: all .2s cubic-bezier(.4,0,.2,1); position: relative; overflow: hidden;
+            backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); display: inline-flex; align-items: center; justify-content: center; gap: 8px; white-space: nowrap;
+        }
+        .btn::before { content:''; position:absolute; top:0; left:-100%; width:100%; height:100%; background: linear-gradient(90deg,transparent,rgba(255,255,255,.1),transparent); transition:left .3s; }
+        .btn:hover::before{ left:100% }
+        .btn:hover { transform: translateY(-1px); background: rgba(255,255,255,.12); border-color: rgba(255,255,255,.18); }
+        .btn:active{ transform: translateY(0) }
+        .btn-primary { background: linear-gradient(135deg, var(--primary), var(--primary-dark)); border: none; box-shadow: 0 4px 20px rgba(99,102,241,.4); }
+        .btn-primary:hover { background: linear-gradient(135deg, var(--primary-dark), #3730a3); transform: translateY(-2px); box-shadow: 0 8px 30px rgba(99,102,241,.5); }
+        .btn-success { background: linear-gradient(135deg, var(--success), #059669); border: none; box-shadow: 0 4px 20px rgba(16,185,129,.3); }
+        .btn-success:hover { background: linear-gradient(135deg, #059669, #047857); transform: translateY(-2px); box-shadow: 0 8px 30px rgba(16,185,129,.4); }
+        .btn-warning { background: linear-gradient(135deg, var(--warning), #d97706); border: none; box-shadow: 0 4px 20px rgba(245,158,11,.3); }
+        .btn-danger { background: linear-gradient(135deg, var(--danger), #dc2626); border: none; box-shadow: 0 4px 20px rgba(239,68,68,.3); }
+        .btn-danger:hover { background: linear-gradient(135deg, #dc2626, #b91c1c); transform: translateY(-2px); box-shadow: 0 8px 30px rgba(239,68,68,.4); }
+        .btn:disabled { opacity: .4; cursor: not-allowed; transform: none !important; box-shadow: none !important; }
+        .btn-group { display: flex; gap: 12px; flex-wrap: wrap; }
+        .btn-group.center { justify-content: center; }
+
+        .card {
+            background: var(--glass); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+            border: 1px solid var(--glass-border); border-radius: 20px; padding: 24px; position: relative;
+        }
+        .card-title { font-size: 18px; font-weight: 600; margin-bottom: 16px; color: white; }
+
+        .game-controls { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px; }
+        .game-controls .btn { font-size: 12px; padding: 10px 12px; }
+
+        #board {
+            width: var(--board-size); height: var(--board-size); margin: 0 auto; border-radius: 20px; overflow: hidden;
+            box-shadow: 0 20px 40px rgba(0,0,0,.3), 0 0 0 1px rgba(255,255,255,.1); background: white;
+        }
+
+        .status-display {
+            background: linear-gradient(135deg, rgba(99,102,241,.15), rgba(139,92,246,.1));
+            border: 1px solid rgba(99,102,241,.2); border-radius: 16px; padding: 16px; text-align: center;
+            font-weight: 500; color: white; backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+            min-height: 50px; display: flex; align-items: center; justify-content: center;
+        }
+
+        .pill {
+            display: inline-flex; align-items: center; font-size: 12px; font-weight: 500; padding: 6px 12px;
+            border-radius: 20px; background: rgba(245,158,11,.15); color: #fbbf24; border: 1px solid rgba(245,158,11,.25); margin: 4px;
+        }
+
+        .history-section {
+            background: var(--glass); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+            border: 1px solid var(--glass-border); border-radius: 16px; padding: 20px;
+        }
+        .history-title { font-size: 16px; font-weight: 600; margin-bottom: 12px; color: white; display: flex; align-items: center; gap: 8px; }
+        #history {
+            background: rgba(0,0,0,.2); border: 1px solid rgba(255,255,255,.1); border-radius: 12px; padding: 16px;
+            font-family: 'SF Mono','Monaco','Cascadia Code',monospace; font-size: 13px; line-height: 1.6; min-height: 80px;
+            white-space: pre-wrap; word-break: break-all; color: rgba(255,255,255,.8);
+        }
+
+        .analyze-section { text-align: center; }
+        #analyzeBtn {
+            background: linear-gradient(135deg, var(--accent), #0891b2); border: none; padding: 16px 32px; font-size: 16px;
+            border-radius: 16px; font-weight: 600; box-shadow: 0 8px 25px rgba(6,182,212,.4);
+        }
+        #analyzeBtn:hover { background: linear-gradient(135deg,#0891b2,#0e7490); transform: translateY(-2px); box-shadow: 0 12px 35px rgba(6,182,212,.5); }
+
+        .training-section {
+            text-align: center;
+            background: var(--glass); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+            border: 1px solid var(--glass-border); border-radius: 16px; padding: 20px;
+        }
+        .training-title { font-size: 16px; font-weight: 600; margin-bottom: 12px; color: white; display: flex; align-items: center; justify-content: center; gap: 8px; }
+        .training-subtitle { font-size: 13px; color: rgba(255,255,255,.6); margin-bottom: 16px; }
+        #trainingBtn {
+            background: linear-gradient(135deg, var(--secondary), #7c3aed); border: none; padding: 14px 28px; font-size: 15px;
+            border-radius: 14px; font-weight: 600; box-shadow: 0 6px 20px rgba(139,92,246,.4);
+        }
+        #trainingBtn:hover { background: linear-gradient(135deg, #7c3aed, #6d28d9); transform: translateY(-2px); box-shadow: 0 10px 30px rgba(139,92,246,.5); }
+
+        .loading { position: relative; overflow: hidden; }
+        .loading::after { content:''; position:absolute; top:0; left:-100%; width:100%; height:100%; background: linear-gradient(90deg,transparent,rgba(255,255,255,.2),transparent); animation: loading-shimmer 1.5s infinite; }
+        @keyframes loading-shimmer { 0%{left:-100%} 100%{left:100%} }
+
+        @media (max-width: 440px) {
+            :root { --board-size: min(90vw, 320px); }
+            .container { padding: 16px; gap: 16px; }
+            .title { font-size: 28px; }
+            .btn-group { justify-content: center; }
+            .btn { flex: 1; min-width: 0; }
+        }
+
+        @keyframes fadeIn { from {opacity:0; transform: translateY(20px)} to {opacity:1; transform: translateY(0)} }
+        .card, .camera-section, .status-display, .training-section { animation: fadeIn .6s cubic-bezier(.4,0,.2,1) forwards; }
+        .card:nth-child(3){ animation-delay: .1s } .card:nth-child(4){ animation-delay: .2s } .card:nth-child(5){ animation-delay: .3s } .card:nth-child(6){ animation-delay: .4s }
+    </style>
 </head>
 
 <body>
-  <h2>Phone Chess Tracker (PoC)</h2>
+    <div class="container">
+        <div class="header">
+            <div class="logo">♟️</div>
+            <h1 class="title">Chess Tracker</h1>
+            <p class="subtitle">AI-powered game analysis</p>
+        </div>
 
-  <video id="cam" autoplay muted playsinline></video>
+        <div class="camera-section">
+            <div class="camera-container">
+                <video id="cam" autoplay muted playsinline></video>
+                <div class="camera-overlay"></div>
+            </div>
+            
+            <div class="btn-group center">
+                <button id="enableCam" class="btn btn-primary">📹 Enable Camera</button>
+                <button id="calib" class="btn" disabled>🎯 Calibrate</button>
+            </div>
+        </div>
 
-  <div id="controls" class="row">
-    <button id="enableCam">Enable camera</button>
-    <button id="calib" disabled>Calibrate board</button>
-    <!-- <button id="btnEmpty" disabled>Capture empty</button>
-    <button id="btnTeachW" disabled>Teach white</button>
-    <button id="btnTeachB" disabled>Teach black</button> -->
-    <button id="btnSample" disabled>Capture sample</button>
+        <div id="board"></div>
+        
+        <div class="status-display" id="status">Waiting for camera …</div>
+        <div class="pill" id="flags" style="display:none"></div>
 
-    <!-- Game lifecycle controls -->
-    <span class="spacer" style="flex-basis:100%"></span>
-    <button id="resignW" disabled>White resigns</button>
-    <button id="resignB" disabled>Black resigns</button>
-    <button id="agreeDraw" disabled>Agree draw</button>
-    <button id="claimDraw" disabled>Claim draw</button>
-    <button id="resetGame">New game</button>
-  </div>
+        <div class="card">
+            <div class="card-title">Game Controls</div>
+            <div class="game-controls">
+                <button id="resignW" class="btn btn-danger" disabled>⚪ Resign</button>
+                <button id="resignB" class="btn btn-danger" disabled>⚫ Resign</button>
+                <button id="agreeDraw" class="btn btn-warning" disabled>🤝 Draw</button>
+                <button id="claimDraw" class="btn btn-warning" disabled>⚖️ Claim</button>
+            </div>
+            <div class="btn-group center">
+                <button id="resetGame" class="btn btn-success">🔄 New Game</button>
+            </div>
+        </div>
 
-  <!-- Labeling preview (optional flow you already had) -->
-  <canvas id="warp" width="800" height="800" style="display:none"></canvas>
-  <div id="grid" style="display:none"></div>
+        <div class="history-section">
+            <div class="history-title">📝 Move History</div>
+            <pre id="history"></pre>
+        </div>
 
-  <div id="board"></div>
-  <div id="status">Waiting for camera …</div>
+        <div class="analyze-section">
+            <button id="analyzeBtn" class="btn" disabled>🔍 Analyze with Stockfish</button>
+        </div>
 
-  <div id="historyWrap">
-    <div class="pill" id="flags" style="display:none"></div>
-    <pre id="history"></pre>
-  </div>
+        <div class="training-section">
+            <div class="training-title">🎯 Training Data</div>
+            <div class="training-subtitle">Create labeled board samples to improve AI accuracy</div>
+            <button id="trainingBtn" class="btn">📸 Collect Training Data</button>
+        </div>
+    </div>
 
-  <button id="analyzeBtn" disabled>Analyze with Stockfish</button>
-  <span class="spacer" style="flex-basis:100%"></span>
-  <div id="analysis" class="pill" style="display:none"></div>
-  <pre id="analysisTable" style="width:var(--w); max-width:100%; white-space:pre-wrap"></pre>
+    <script>
+        // ---------- elements ----------
+        const statusEl = document.getElementById('status');
+        const flagsEl = document.getElementById('flags');
+        const videoEl = document.getElementById('cam');
+        const historyEl = document.getElementById('history');
+        const enableBtn = document.getElementById('enableCam');
+        const calibBtn = document.getElementById('calib');
+        const resignWBtn = document.getElementById('resignW');
+        const resignBBtn = document.getElementById('resignB');
+        const agreeBtn = document.getElementById('agreeDraw');
+        const claimBtn = document.getElementById('claimDraw');
+        const resetBtn = document.getElementById('resetGame');
+        const trainingBtn = document.getElementById('trainingBtn');
 
-
-  <script>
-  // ---------- elements ----------
-  const statusEl   = document.getElementById('status');
-  const flagsEl    = document.getElementById('flags');
-  const videoEl    = document.getElementById('cam');
-  const historyEl  = document.getElementById('history');
-
-  const enableBtn  = document.getElementById('enableCam');
-  const calibBtn   = document.getElementById('calib');
-  // const btnEmpty   = document.getElementById('btnEmpty');
-  // const btnTeachW  = document.getElementById('btnTeachW');
-  // const btnTeachB  = document.getElementById('btnTeachB');
-  const btnSample  = document.getElementById('btnSample');
-  const warpCanvas = document.getElementById('warp');
-  const gridDiv    = document.getElementById('grid');
-
-  const resignWBtn = document.getElementById('resignW');
-  const resignBBtn = document.getElementById('resignB');
-  const agreeBtn   = document.getElementById('agreeDraw');
-  const claimBtn   = document.getElementById('claimDraw');
-  const resetBtn   = document.getElementById('resetGame');
-
-  // ---------- chessboard.js ----------
-  const board = Chessboard('board', {
-    position   : 'start',
-    draggable  : false,
-    pieceTheme : '/chessboardjs-1.0.0/img/chesspieces/wikipedia/{piece}.png'
-  });
-
-  // ---------- state ----------
-  let ws, stream, track, step = 0;
-  let curLabels = null, curWarp = null;
-
-  // Backpressure-aware sender state
-  let inFlight = false;
-  let pendingBlob = null;
-  const TARGET_FPS = 6;                       // tune 3–10 based on server speed
-  const MIN_SEND_MS = 1000 / TARGET_FPS;
-  let lastSentAt = 0;
-
-  // ---------- helpers ----------
-  const wsURL = () => (location.protocol === 'https:' ? 'wss' : 'ws') + '://' + location.host + '/ws';
-
-  const blobToB64 = (blob) => new Promise(r => {
-    const fr = new FileReader();
-    fr.onload = () => r(fr.result);
-    fr.readAsDataURL(blob);
-  });
-
-  const isSecure = () =>
-    window.isSecureContext || location.protocol === 'https:' || location.hostname === 'localhost';
-
-  function uciToDashed(uci) {
-    // "e2e4" -> "e2-e4"
-    if (!uci || uci.length < 4) return uci;
-    return `${uci.slice(0,2)}-${uci.slice(2,4)}`;
-  }
-
-  function setFlags(state) {
-    if (!state) { flagsEl.style.display = 'none'; return; }
-    const pills = [];
-    if (state.check) pills.push('Checkmate');
-    if (state.threefold_claimable) pills.push('Threefold claimable');
-    if (state.fifty_moves_claimable) pills.push('50-move claimable');
-    if (state.fivefold_repetition) pills.push('Auto-draw (5×)');
-    if (state.seventyfive_moves) pills.push('Auto-draw (75-move)');
-    if (state.stalemate) pills.push('Stalemate');
-    if (state.insufficient_material) pills.push('Insufficient material');
-
-    if (pills.length) {
-      flagsEl.textContent = pills.join(' · ');
-      flagsEl.style.display = '';
-    } else {
-      flagsEl.style.display = 'none';
-    }
-  }
-
-  // capture frame (downscale + compress)
-  async function grabFrame (videoTrack, canvas) {
-    if ('ImageCapture' in window) {
-      try {
-        const cap = new ImageCapture(videoTrack);
-        if (cap.grabFrame) return cap.grabFrame();  // ImageBitmap at native res
-      } catch { /* fallback */ }
-    }
-    canvas = canvas || (grabFrame._c ||= document.createElement('canvas'));
-    const srcW = videoEl.videoWidth  || 640;
-    const srcH = videoEl.videoHeight || 480;
-    const MAX_W = 960;                        // cap width to reduce payload size
-    const scale = Math.min(1, MAX_W / srcW);
-    canvas.width  = Math.round(srcW * scale);
-    canvas.height = Math.round(srcH * scale);
-    const ctx = canvas.getContext('2d', { willReadFrequently: false });
-    ctx.drawImage(videoEl, 0, 0, canvas.width, canvas.height);
-    return new Promise(r => canvas.toBlob(r, 'image/jpeg', 0.65));
-  }
-
-  async function frameToBlob (frame) {
-    if (frame instanceof Blob) return frame;
-    if (frame && frame.convertToBlob) return frame.convertToBlob();
-    const c = document.createElement('canvas');
-    c.width = frame.width; c.height = frame.height;
-    c.getContext('2d').drawImage(frame,0,0);
-    return new Promise(r => c.toBlob(r,'image/jpeg',0.65));
-  }
-
-  async function requestCamera() {
-    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-      statusEl.textContent = 'Camera API not supported in this browser.';
-      return;
-    }
-    if (!isSecure()) {
-      statusEl.textContent = 'Open this page over HTTPS (or localhost). Mobile browsers block camera on HTTP.';
-      return;
-    }
-    try {
-      const constraints = { video: { facingMode: { ideal: 'environment' } }, audio: false };
-      stream = await navigator.mediaDevices.getUserMedia(constraints);
-      videoEl.srcObject = stream;
-
-      await new Promise(res => {
-        if (videoEl.readyState >= 2) return res();
-        videoEl.onloadeddata = res;
-      });
-
-      track = stream.getVideoTracks()[0];
-      statusEl.textContent = 'Camera ready. Point at the board.';
-      calibBtn.disabled = false;
-    } catch (err) {
-      statusEl.textContent = `Camera error: ${err.name} – ${err.message}`;
-      console.error(err);
-    }
-  }
-
-  async function ensureCamera() {
-    if (track) return true;
-    await requestCamera();
-    return !!track;
-  }
-
-  function enableEndControls(on) {
-    resignWBtn.disabled = !on;
-    resignBBtn.disabled = !on;
-    agreeBtn.disabled   = !on;
-    // claimBtn toggled dynamically based on server flags
-  }
-
-  function closeWS(keepCamera = true) {
-    try { ws && ws.readyState === 1 && ws.close(); } catch {}
-    ws = null;
-    inFlight = false;
-    pendingBlob = null;
-
-    if (!keepCamera) {
-      try { stream && stream.getTracks().forEach(t => t.stop()); } catch {}
-      track = null;
-      stream = null;
-      videoEl.srcObject = null;
-    }
-}
-
-  // --- Backpressure-aware sender (keeps only the newest frame; 1 in-flight) ---
-  async function refreshPending() {
-    if (!track) return;
-    const fr   = await grabFrame(track);
-    const blob = await frameToBlob(fr);
-    pendingBlob = blob;               // overwrite older pending frame
-  }
-
-  function pump() {
-    if (!ws || ws.readyState !== 1 || !track) return;
-    const now = performance.now();
-
-    // refresh the pending frame opportunistically
-    refreshPending().then(() => {
-      if (!inFlight && pendingBlob && (now - lastSentAt) >= MIN_SEND_MS) {
-        inFlight = true;
-        lastSentAt = performance.now();
-
-        // still using base64 text frames
-        blobToB64(pendingBlob).then(b64 => {
-          pendingBlob = null;
-          try { ws.send(b64); } catch {}
+        // ---------- chessboard.js ----------
+        const board = Chessboard('board', {
+            position : 'start',
+            draggable : false,
+            pieceTheme : '/chessboardjs-1.0.0/img/chesspieces/wikipedia/{piece}.png'
         });
-      }
-      requestAnimationFrame(pump);
-    });
-  }
 
-  async function startWS () {
-    ws = new WebSocket(wsURL());
-    ws.onopen  = () => {
-      statusEl.textContent = 'Connected – tracking moves.';
-      inFlight = false; pendingBlob = null; lastSentAt = 0;
-      enableEndControls(true);
-      pump();
-    };
-    ws.onclose = (e) => {
-      console.log('WS close', e.code, e.reason);
-      statusEl.textContent = `WebSocket closed (code ${e.code})`;
-      enableEndControls(false);
-      claimBtn.disabled = true;
-    };
-    ws.onerror = (e) => console.error('WS error', e);
+        // ---------- state ----------
+        let ws, stream, track, step = 0;
 
-    ws.onmessage = ({data}) => {
-      const msg = JSON.parse(data);
-      if (msg.type === 'ping') return;  // ignore server heartbeat
+        // Backpressure-aware sender state
+        let inFlight = false;
+        let pendingBlob = null;
+        const TARGET_FPS = 6;
+        const MIN_SEND_MS = 1000 / TARGET_FPS;
+        let lastSentAt = 0;
 
-      if (msg.ms !== undefined) statusEl.textContent = `Proc ${msg.ms} ms`;
+        // ---------- helpers ----------
+        const wsURL = () => (location.protocol === 'https:' ? 'wss' : 'ws') + '://' + location.host + '/ws';
+        const blobToB64 = (blob) => new Promise(r => {
+            const fr = new FileReader();
+            fr.onload = () => r(fr.result);
+            fr.readAsDataURL(blob);
+        });
+        const isSecure = () => (window.isSecureContext || location.protocol === 'https:' || location.hostname === 'localhost');
 
-      // Prefer authoritative FEN for rendering (promotions, castling, etc.)
-      if (msg.fen) {
-        board.position(msg.fen, true);
-      } else if (msg.move) {
-        // Fallback if no FEN (non-promotion only)
-        if (msg.move.length === 4) board.move(uciToDashed(msg.move));
-      }
-
-      if (msg.history) {
-        historyEl.textContent = msg.history.join(' ');
-        enableAnalyzeIfMoves();            // ← enable the button once moves exist
-      }
-      if (msg.err) statusEl.textContent = msg.err;
-
-      // State flags (check, claimables, game over)
-      if (msg.state) {
-        setFlags(msg.state);
-
-        // Enable "Claim draw" only if claimable (threefold or fifty-move)
-        const claimable = !!(msg.state.threefold_claimable || msg.state.fifty_moves_claimable);
-        claimBtn.disabled = !claimable;
-
-        if (msg.state.game_over) {
-          const term = msg.state.termination || 'GAME_OVER';
-          const res  = msg.state.result || '';
-          statusEl.textContent = `Game over (${term}): ${res}`;
-          closeWS(true);
-          enableEndControls(false);
-          claimBtn.disabled = true;
-        } else if (msg.state.check) {
-          // Only show "Check!" if not game over
-          statusEl.textContent = 'Check!';
+        function uciToDashed(uci) {
+            if (!uci || uci.length < 4) return uci;
+            return `${uci.slice(0,2)}-${uci.slice(2,4)}`;
         }
-      } else {
-        claimBtn.disabled = true;
-        setFlags(null);
-      }
 
-      inFlight = false;                 // ACK: allow next frame
-    };
-  }
+        function setFlags(state) {
+            if (!state) { flagsEl.style.display = 'none'; return; }
+            const pills = [];
+            if (state.check) pills.push('Check');
+            if (state.threefold_claimable) pills.push('Threefold claimable');
+            if (state.fifty_moves_claimable) pills.push('50-move claimable');
+            if (state.fivefold_repetition) pills.push('Auto-draw (5×)');
+            if (state.seventyfive_moves) pills.push('Auto-draw (75-move)');
+            if (state.stalemate) pills.push('Stalemate');
+            if (state.insufficient_material) pills.push('Insufficient material');
+            if (pills.length) { flagsEl.textContent = pills.join(' · '); flagsEl.style.display = ''; } else { flagsEl.style.display = 'none'; }
+        }
 
-  async function calibrate () {
-    if (!(await ensureCamera())) return;
-    const fr   = await grabFrame(track);
-    const blob = await frameToBlob(fr);
-    const b64  = await blobToB64(blob);
-    if (step === 0) {
-      statusEl.textContent = 'Calibrating…';
-      const res = await fetch('/calibrate', { method:'POST', body:b64 });
-      if (!res.ok) {
-        statusEl.textContent = 'Calibration failed – show the whole board & retry';
-        return;
-      }
-      step = 1;
-      statusEl.textContent = 'Corners found. Set up the board and press again.';
-      calibBtn.textContent = 'Start tracking';
-      btnSample.disabled = false; // ← enable sample capture right away
-    } else {
-      calibBtn.disabled = true;
-      startWS();
-    }
-  }
+        async function grabFrame (videoTrack, canvas) {
+            if ('ImageCapture' in window) {
+                try {
+                    const cap = new ImageCapture(videoTrack);
+                    if (cap.grabFrame) return cap.grabFrame();
+                } catch { /* fallback */ }
+            }
+            canvas = canvas || (grabFrame._c ||= document.createElement('canvas'));
+            const srcW = videoEl.videoWidth || 640;
+            const srcH = videoEl.videoHeight || 480;
+            const MAX_W = 960;
+            const scale = Math.min(1, MAX_W / srcW);
+            canvas.width = Math.round(srcW * scale);
+            canvas.height = Math.round(srcH * scale);
+            const ctx = canvas.getContext('2d', { willReadFrequently: false });
+            ctx.drawImage(videoEl, 0, 0, canvas.width, canvas.height);
+            return new Promise(r => canvas.toBlob(r, 'image/jpeg', 0.65));
+        }
 
-  async function postB64(url){
-    if (!(await ensureCamera())) throw new Error('No camera');
-    const fr = await grabFrame(track);
-    const blob = await frameToBlob(fr);
-    const b64  = await blobToB64(blob);
-    const res  = await fetch(url, {method:'POST', body:b64});
-    if(!res.ok) throw new Error(await res.text());
-    return res.json();
-  }
+        async function frameToBlob (frame) {
+            if (frame instanceof Blob) return frame;
+            if (frame && frame.convertToBlob) return frame.convertToBlob();
+            const c = document.createElement('canvas');
+            c.width = frame.width; c.height = frame.height;
+            c.getContext('2d').drawImage(frame,0,0);
+            return new Promise(r => c.toBlob(r,'image/jpeg',0.65));
+        }
 
-  function renderGrid(){
-    gridDiv.innerHTML = '';
-    gridDiv.style.display = 'grid';
-    gridDiv.style.gridTemplateColumns = 'repeat(8, 40px)';
-    gridDiv.style.gap = '2px';
-    curLabels.forEach((lab,i)=>{
-      const cell = document.createElement('button');
-      cell.textContent = lab;
-      cell.onclick = ()=>{
-        const order = ['E','W','B'];
-        cell.textContent = curLabels[i] = order[(order.indexOf(curLabels[i])+1)%3];
-      };
-      gridDiv.appendChild(cell);
-    });
-    const save = document.createElement('button');
-    save.textContent = 'Save sample';
-    save.style.gridColumn = 'span 8';
-    save.onclick = async ()=>{
-      const res = await fetch('/save-sample', {
-        method:'POST', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({labels: curLabels, image_b64: curWarp})
-      });
-      statusEl.textContent = res.ok ? 'Saved sample.' : 'Save failed.';
-    };
-    gridDiv.appendChild(save);
-  }
+        async function requestCamera() {
+            if (!navigator.mediaDevices?.getUserMedia) {
+                statusEl.textContent = 'Camera API not supported';
+                return;
+            }
+            if (!isSecure()) {
+                statusEl.textContent = 'HTTPS required for camera access';
+                return;
+            }
 
-  // ---------- resign / draw / reset ----------
-  async function postJSON(url, opts={}) {
-    const res = await fetch(url, { method:'POST', ...opts });
-    const body = await res.json().catch(()=> ({}));
-    if (!res.ok) throw new Error(body.detail || JSON.stringify(body));
-    return body;
-  }
+            enableBtn.classList.add('loading');
 
-  async function resign(color) {
-    try {
-      const body = await postJSON(`/resign/${color}`);
-      if (body.fen) board.position(body.fen, false);
-      if (body.history) historyEl.textContent = body.history.join(' ');
-      statusEl.textContent = `Game over (${body.state?.termination || 'RESIGNATION'}): ${body.state?.result || ''}`;
-      closeWS(true);
-      enableEndControls(false);
-      claimBtn.disabled = true;
-      setFlags(body.state || null);
-    } catch (e) {
-      statusEl.textContent = `Resign failed: ${e.message}`;
-    }
-  }
+            // Try back camera, then any camera as a fallback (important on iOS).
+            const tries = [
+                { video: { facingMode: { ideal: 'environment' } }, audio: false },
+                { video: true, audio: false }
+            ];
 
-  async function agreeDraw() {
-    try {
-      const body = await postJSON('/draw/agree');
-      if (body.fen) board.position(body.fen, false);
-      if (body.history) historyEl.textContent = body.history.join(' ');
-      statusEl.textContent = `Game over (${body.state?.termination || 'DRAW'}): ${body.state?.result || ''}`;
-      closeWS(true);
-      enableEndControls(false);
-      claimBtn.disabled = true;
-      setFlags(body.state || null);
-    } catch (e) {
-      statusEl.textContent = `Agree draw failed: ${e.message}`;
-    }
-  }
+            let ok = false;
+            for (const constraints of tries) {
+                try {
+                    stream = await navigator.mediaDevices.getUserMedia(constraints);
+                    ok = true;
+                    break;
+                } catch (e) {
+                    console.warn('getUserMedia failed with', constraints, e);
+                }
+            }
+            if (!ok) {
+                statusEl.textContent = 'Camera permission denied or no camera found. Check Site Settings.';
+                enableBtn.classList.remove('loading');
+                return;
+            }
 
-  async function claimDraw() {
-    try {
-      const body = await postJSON('/draw/claim');
-      if (body.fen) board.position(body.fen, false);
-      if (body.history) historyEl.textContent = body.history.join(' ');
-      statusEl.textContent = `Game over (${body.state?.termination || 'DRAW'}): ${body.state?.result || ''}`;
-      closeWS(true);
-      enableEndControls(false);
-      claimBtn.disabled = true;
-      setFlags(body.state || null);
-    } catch (e) {
-      statusEl.textContent = `Claim failed: ${e.message}`;
-    }
-  }
+            try {
+                videoEl.srcObject = stream;
 
-  async function resetGame() {
-    try {
-      const body = await postJSON('/reset');
-      board.position(body.fen || 'start', false);
-      historyEl.textContent = (body.history || []).join(' ');
-      enableAnalyzeIfMoves(); 
-      statusEl.textContent = 'New game — tracking resumed.';
-      setFlags(null);
-      // Keep calibration; user can hit the button to (re)start tracking
-      calibBtn.textContent = 'Start tracking';
-    // If camera is live, restart WS so buttons get enabled in ws.onopen
-      if (track && track.readyState === 'live') {
-        startWS();
-      } else {
-        statusEl.textContent = 'New game. Start tracking when ready.';
-      }
-      claimBtn.disabled = true;
-    } catch (e) {
-      statusEl.textContent = `Reset failed: ${e.message}`;
-    }
-  }
+                // iOS Safari often needs an explicit play() after a user gesture.
+                await new Promise(res => {
+                    if (videoEl.readyState >= 2) return res();
+                    const onLoad = () => { videoEl.removeEventListener('loadedmetadata', onLoad); res(); };
+                    videoEl.addEventListener('loadedmetadata', onLoad);
+                });
 
-  // ---------- wire up UI ----------
-  enableBtn.addEventListener('click', requestCamera);
-  calibBtn.addEventListener('click', calibrate);
+                try { await videoEl.play(); } catch {}
 
-  // btnEmpty.onclick = async ()=>{
-  //   await postB64('/capture-empty');
-  //   statusEl.textContent = 'Empty captured. Teach colors.';
-  //   btnTeachW.disabled = btnTeachB.disabled = false;
-  // };
+                track = stream.getVideoTracks()[0];
+                console.log('Camera track acquired:', track.label);
 
-  // btnTeachW.onclick = ()=> postB64('/teach-color/white').then(()=> {
-  //   statusEl.textContent='White learned.';
-  // }).catch(e => statusEl.textContent = e.message);
+                statusEl.textContent = 'Camera ready • Point at chess board';
+                calibBtn.disabled = false;
+            } catch (err) {
+                console.error(err);
+                statusEl.textContent = `Camera error: ${err.message || err}`;
+            } finally {
+                enableBtn.classList.remove('loading');
+            }
+        }
 
-  // btnTeachB.onclick = ()=> postB64('/teach-color/black').then(()=> {
-  //   statusEl.textContent='Black learned. Ready to label!';
-  //   btnSample.disabled = false;
-  // }).catch(e => statusEl.textContent = e.message);
+        async function ensureCamera() {
+            if (track) return true;
+            await requestCamera();
+            return !!track;
+        }
 
-  btnSample.onclick = async ()=>{
-    try {
-      const {labels, warp_png} = await postB64('/propose-labels');
-      curLabels = labels; curWarp = warp_png;
-      const img = new Image();
-      img.onload = ()=>{
-        const ctx = warpCanvas.getContext('2d');
-        ctx.clearRect(0,0,800,800);
-        ctx.drawImage(img,0,0,800,800);
-        warpCanvas.style.display = 'block';
-        renderGrid();
-      };
-      img.src = 'data:image/png;base64,'+curWarp;
-    } catch (e) {
-      statusEl.textContent = e.message;
-    }
-  };
+        function enableEndControls(on) {
+            resignWBtn.disabled = !on;
+            resignBBtn.disabled = !on;
+            agreeBtn.disabled = !on;
+        }
 
-  resignWBtn.onclick = () => resign('white');
-  resignBBtn.onclick = () => resign('black');
-  agreeBtn.onclick   = agreeDraw;
-  claimBtn.onclick   = claimDraw;
-  resetBtn.onclick   = resetGame;
+        function closeWS(keepCamera = true) {
+            try { ws && ws.readyState === 1 && ws.close(); } catch {}
+            ws = null; inFlight = false; pendingBlob = null;
+            if (!keepCamera) {
+                try { stream && stream.getTracks().forEach(t => t.stop()); } catch {}
+                track = null; stream = null; videoEl.srcObject = null;
+            }
+        }
 
-  // ---------- startup tip ----------
-  if (!isSecure()) {
-    statusEl.textContent = 'Tip: open this over HTTPS (ngrok/cloudflared) or localhost so the camera prompt appears.';
-  }
-  </script>
+        async function refreshPending() {
+            if (!track) return;
+            const fr = await grabFrame(track);
+            const blob = await frameToBlob(fr);
+            pendingBlob = blob;
+        }
 
+        function pump() {
+            if (!ws || ws.readyState !== 1 || !track) return;
+            const now = performance.now();
+            refreshPending().then(() => {
+                if (!inFlight && pendingBlob && (now - lastSentAt) >= MIN_SEND_MS) {
+                    inFlight = true;
+                    lastSentAt = performance.now();
+                    blobToB64(pendingBlob).then(b64 => {
+                        pendingBlob = null;
+                        try { ws.send(b64); } catch {}
+                    });
+                }
+                requestAnimationFrame(pump);
+            });
+        }
 
+        async function startWS () {
+            ws = new WebSocket(wsURL());
+            ws.onopen = () => {
+                statusEl.textContent = 'Connected • Tracking moves';
+                inFlight = false; pendingBlob = null; lastSentAt = 0;
+                enableEndControls(true);
+                pump();
+            };
+            ws.onclose = (e) => {
+                console.log('WS close', e.code, e.reason);
+                statusEl.textContent = `Connection closed (${e.code})`;
+                enableEndControls(false);
+                claimBtn.disabled = true;
+            };
+            ws.onerror = (e) => console.error('WS error', e);
+            ws.onmessage = ({data}) => {
+                const msg = JSON.parse(data);
+                if (msg.type === 'ping') return;
+                if (msg.ms !== undefined) statusEl.textContent = `Processing ${msg.ms}ms`;
 
-  <script>
-  const analyzeBtn = document.getElementById('analyzeBtn');
-  const analysisEl = document.getElementById('analysis');
-  const analysisTable = document.getElementById('analysisTable');
-  document.addEventListener('DOMContentLoaded', enableAnalyzeIfMoves);
+                if (msg.fen) {
+                    board.position(msg.fen, true);
+                } else if (msg.move) {
+                    if (msg.move.length === 4) board.move(uciToDashed(msg.move));
+                }
 
-  function enableAnalyzeIfMoves() {
-    const hasMoves = (historyEl.textContent.trim().length > 0);
-    analyzeBtn.disabled = !hasMoves;
-  }
+                if (msg.history) {
+                    historyEl.textContent = msg.history.join(' ');
+                    enableAnalyzeIfMoves();
+                }
 
-  analyzeBtn.onclick = async ()=>{
+                if (msg.err) statusEl.textContent = msg.err;
 
-    window.open('/analysis.html');
-  };
-</script>
+                if (msg.state) {
+                    setFlags(msg.state);
+                    const claimable = !!(msg.state.threefold_claimable || msg.state.fifty_moves_claimable);
+                    claimBtn.disabled = !claimable;
 
+                    if (msg.state.game_over) {
+                        const term = msg.state.termination || 'GAME_OVER';
+                        const res = msg.state.result || '';
+                        statusEl.textContent = `Game over (${term}): ${res}`;
+                        closeWS(true);
+                        enableEndControls(false);
+                        claimBtn.disabled = true;
+                    } else if (msg.state.check) {
+                        statusEl.textContent = 'Check!';
+                    }
+                } else {
+                    claimBtn.disabled = true;
+                    setFlags(null);
+                }
+                inFlight = false;
+            };
+        }
+
+        async function calibrate () {
+            if (!(await ensureCamera())) return;
+            const fr = await grabFrame(track);
+            const blob = await frameToBlob(fr);
+            const b64 = await blobToB64(blob);
+            if (step === 0) {
+                statusEl.textContent = 'Calibrating board corners…';
+                calibBtn.classList.add('loading');
+                const res = await fetch('/calibrate', { method:'POST', body:b64 });
+                calibBtn.classList.remove('loading');
+                if (!res.ok) {
+                    statusEl.textContent = 'Calibration failed • Show entire board';
+                    return;
+                }
+                step = 1;
+                statusEl.textContent = 'Corners found • Set up pieces and start';
+                calibBtn.textContent = '🚀 Start';
+            } else {
+                calibBtn.disabled = true;
+                startWS();
+            }
+        }
+
+        async function postJSON(url, opts={}) {
+            const res = await fetch(url, { method:'POST', ...opts });
+            const body = await res.json().catch(()=> ({}));
+            if (!res.ok) throw new Error(body.detail || JSON.stringify(body));
+            return body;
+        }
+
+        async function resign(color) {
+            try {
+                const body = await postJSON(`/resign/${color}`);
+                if (body.fen) board.position(body.fen, false);
+                if (body.history) historyEl.textContent = body.history.join(' ');
+                statusEl.textContent = `Game over (${body.state?.termination || 'RESIGNATION'}): ${body.state?.result || ''}`;
+                closeWS(true);
+                enableEndControls(false);
+                claimBtn.disabled = true;
+                setFlags(body.state || null);
+            } catch (e) {
+                statusEl.textContent = `Resign failed: ${e.message}`;
+            }
+        }
+
+        async function agreeDraw() {
+            try {
+                const body = await postJSON('/draw/agree');
+                if (body.fen) board.position(body.fen, false);
+                if (body.history) historyEl.textContent = body.history.join(' ');
+                statusEl.textContent = `Game over (${body.state?.termination || 'DRAW'}): ${body.state?.result || ''}`;
+                closeWS(true);
+                enableEndControls(false);
+                claimBtn.disabled = true;
+                setFlags(body.state || null);
+            } catch (e) {
+                statusEl.textContent = `Draw failed: ${e.message}`;
+            }
+        }
+
+        async function claimDraw() {
+            try {
+                const body = await postJSON('/draw/claim');
+                if (body.fen) board.position(body.fen, false);
+                if (body.history) historyEl.textContent = body.history.join(' ');
+                statusEl.textContent = `Game over (${body.state?.termination || 'DRAW'}): ${body.state?.result || ''}`;
+                closeWS(true);
+                enableEndControls(false);
+                claimBtn.disabled = true;
+                setFlags(body.state || null);
+            } catch (e) {
+                statusEl.textContent = `Claim failed: ${e.message}`;
+            }
+        }
+
+        async function resetGame() {
+            try {
+                const body = await postJSON('/reset');
+                board.position(body.fen || 'start', false);
+                historyEl.textContent = (body.history || []).join(' ');
+                enableAnalyzeIfMoves();
+                statusEl.textContent = 'New game started';
+                setFlags(null);
+                calibBtn.textContent = '🚀 Start';
+                if (track && track.readyState === 'live') {
+                    startWS();
+                } else {
+                    statusEl.textContent = 'New game • Ready to track';
+                }
+                claimBtn.disabled = true;
+            } catch (e) {
+                statusEl.textContent = `Reset failed: ${e.message}`;
+            }
+        }
+
+        function openTrainingPage() {
+            window.location.href = '/training.html';
+        }
+
+        // ---------- Event Listeners ----------
+        enableBtn.addEventListener('click', requestCamera);
+        calibBtn.addEventListener('click', calibrate);
+        resignWBtn.onclick = () => resign('white');
+        resignBBtn.onclick = () => resign('black');
+        agreeBtn.onclick = agreeDraw;
+        claimBtn.onclick = claimDraw;
+        resetBtn.onclick = resetGame;
+        trainingBtn.onclick = openTrainingPage;
+
+        if (!isSecure()) {
+            statusEl.textContent = 'HTTPS required • Use ngrok or localhost';
+        }
+    </script>
+
+    <script>
+        const analyzeBtn = document.getElementById('analyzeBtn');
+
+        document.addEventListener('DOMContentLoaded', enableAnalyzeIfMoves);
+
+        function enableAnalyzeIfMoves() {
+            const hasMoves = (historyEl.textContent.trim().length > 0);
+            analyzeBtn.disabled = !hasMoves;
+        }
+
+        analyzeBtn.onclick = async () => {
+            window.open('/analysis.html');
+        };
+    </script>
 </body>
 </html>

@@ -1,294 +1,500 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8">
-  <title>Analysis • Phone Chess Tracker</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <link rel="stylesheet" href="/chessboardjs-1.0.0/css/chessboard-1.0.0.min.css">
+  <meta charset="utf-8" />
+  <title>Analysis • Chess Tracker</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+
+  <!-- chessboard.js (served locally) -->
+  <link rel="stylesheet" href="/chessboardjs-1.0.0/css/chessboard-1.0.0.min.css" />
   <script src="/chessboardjs-1.0.0/js/jquery-3.7.1.min.js"></script>
   <script src="/chessboardjs-1.0.0/js/chessboard-1.0.0.min.js"></script>
 
   <style>
-    :root { --w: 420px; }
-    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;margin:0;padding:16px;background:#fafafa;color:#222;}
-    .wrap{display:grid;grid-template-columns: var(--w) 1fr; gap:16px; align-items:start; max-width:1200px; margin:0 auto;}
-    h2{margin:0 0 8px;}
-    #board{width:var(--w); background:#fff; border-radius:8px; box-shadow: 0 1px 2px rgba(0,0,0,.06);}
-    .controls{display:flex; gap:8px; flex-wrap:wrap; margin:8px 0;}
-    button{padding:8px 12px; border:1px solid #cfd8e3; background:#fff; border-radius:8px; cursor:pointer;}
-    button:disabled{opacity:.5; cursor:not-allowed;}
-    .pill{display:inline-block; font-size:.86rem; padding:4px 8px;border-radius:999px;background:#f1f5f9;border:1px solid #e2e8f0;color:#334155}
-    table{width:100%; border-collapse:collapse; background:#fff; border-radius:8px; overflow:hidden; box-shadow: 0 1px 2px rgba(0,0,0,.06);}
-    th, td{padding:8px 10px; border-bottom:1px solid #edf2f7; text-align:left; font-size:.95rem;}
-    tr:hover{background:#f8fafc; cursor:pointer;}
-    .tag{font-size:.75rem; padding:2px 6px; border-radius:999px;}
-    .tag.best{background:#dcfce7; border:1px solid #86efac; color:#166534; font-weight:600;}
-    .tag.good{background:#ecfeff; border:1px solid #a5f3fc; color:#155e75;}
-    .tag.inaccuracy{background:#fff7ed; border:1px solid #fed7aa; color:#9a3412;}
-    .tag.mistake{background:#fef2f2; border:1px solid #fecaca; color:#991b1b;}
-    .tag.blunder{background:#fef2f2; border:1px solid #fca5a5; color:#7f1d1d; font-weight:600;}
-    .meta{display:flex; align-items:center; gap:8px; margin:8px 0;}
-    .hl{outline:3px solid rgba(245,158,11,.9) !important; box-shadow: inset 0 0 0 2px #fff;}
-    .hl2{outline:3px solid rgba(99,102,241,.9) !important; box-shadow: inset 0 0 0 2px #fff;}
-    #status{min-height:1.4em; color:#475569;}
-    .right-top{display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;}
-    .eval{font-variant-numeric:tabular-nums;}
-    .kbd{font-family:ui-monospace,SFMono-Regular,Menlo,monospace; background:#e2e8f0; border-radius:6px; padding:2px 6px; font-size:.8rem;}
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
+
+    :root{
+      --primary: #6366f1;
+      --primary-dark: #4f46e5;
+      --secondary: #8b5cf6;
+      --accent: #06b6d4;
+      --success: #10b981;
+      --warning: #f59e0b;
+      --danger: #ef4444;
+
+      --glass: rgba(255, 255, 255, 0.08);
+      --glass-border: rgba(255, 255, 255, 0.12);
+
+      --text: #fff;
+      --muted: rgba(255,255,255,.7);
+
+      --board-size: min(86vw, 420px);
+      --card-radius: 20px;
+    }
+
+    *{ box-sizing: border-box; margin: 0; padding: 0; }
+    body{
+      font-family: 'Inter', -apple-system, system-ui, sans-serif;
+      background: linear-gradient(135deg, #0f0f23 0%, #1a1a2e 25%, #16213e 50%, #0f3460 100%);
+      min-height: 100vh; color: var(--text); overflow-x: hidden;
+      -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale;
+      padding-bottom: env(safe-area-inset-bottom);
+    }
+    body::before{
+      content:''; position:fixed; inset:0; pointer-events:none; z-index:0;
+      background:
+        radial-gradient(circle at 20% 80%, rgba(99,102,241,.15) 0%, transparent 50%),
+        radial-gradient(circle at 80% 20%, rgba(139,92,246,.1) 0%, transparent 50%),
+        radial-gradient(circle at 40% 40%, rgba(6,182,212,.08) 0%, transparent 50%);
+    }
+
+    .container{
+      position: relative; z-index:1;
+      max-width: 1100px; margin: 0 auto; padding: calc(18px + env(safe-area-inset-top)) 16px 20px;
+      display: grid; gap: 16px;
+      grid-template-columns: 1fr;
+    }
+    @media (min-width: 980px){
+      .container{ grid-template-columns: minmax(320px, 520px) 1fr; align-items: start; }
+      :root{ --board-size: 440px; }
+    }
+
+    .header{ text-align:center; margin-bottom: 2px; }
+    .title{
+      font-size: 30px; font-weight: 800; letter-spacing: -0.02em; margin-bottom: 6px;
+      background: linear-gradient(135deg, #ffffff 0%, #a8a8a8 100%);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+    }
+    .subtitle{ color: var(--muted); font-size: 14px; }
+
+    .card{
+      background: var(--glass); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+      border: 1px solid var(--glass-border); border-radius: var(--card-radius); overflow: hidden;
+    }
+    .section{ padding: 18px; }
+
+    /* Buttons */
+    .btn{
+      background: var(--glass); border: 1px solid var(--glass-border); border-radius: 12px;
+      padding: 12px 16px; font: inherit; font-weight: 600; color: #fff; cursor: pointer;
+      transition: all .2s cubic-bezier(.4,0,.2,1); display:inline-flex; align-items:center; gap:8px;
+      -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
+    }
+    .btn:hover{ transform: translateY(-1px); background: rgba(255,255,255,.12); border-color: rgba(255,255,255,.18); }
+    .btn:active{ transform: translateY(0); }
+    .btn:disabled{ opacity:.45; cursor:not-allowed; transform:none; }
+    .btn-primary{ background: linear-gradient(135deg, var(--primary), var(--primary-dark)); border: none; box-shadow: 0 6px 20px rgba(99,102,241,.35); }
+    .btn-success{ background: linear-gradient(135deg, var(--success), #059669); border: none; box-shadow: 0 6px 20px rgba(16,185,129,.3); }
+    .btn-warning{ background: linear-gradient(135deg, var(--warning), #d97706); border: none; box-shadow: 0 6px 20px rgba(245,158,11,.3); }
+
+    .btn-group{ display:flex; flex-wrap: wrap; gap:10px; justify-content:center; }
+
+    .pill{
+      display:inline-flex; align-items:center; gap:8px; padding: 8px 12px; border-radius: 999px;
+      border:1px solid var(--glass-border); background: rgba(255,255,255,.10); font-size: 13px; font-weight: 600;
+    }
+
+    /* Back button (like sample.html) */
+    .back-nav{ position: fixed; top: 20px; left: 20px; z-index: 10; }
+    .back-btn{
+      background: var(--glass); border:1px solid var(--glass-border); border-radius:12px; color:#fff;
+      padding: 8px 12px; font-size: 14px; font-weight: 600; cursor: pointer;
+      -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
+      display:inline-flex; align-items:center; gap:6px;
+      transition: all .2s cubic-bezier(.4,0,.2,1);
+    }
+    .back-btn:hover{ transform: translateY(-1px); background: rgba(255,255,255,.12); border-color: rgba(255,255,255,.18); }
+
+    /* Board + Eval bar */
+    .board-row{ display:flex; gap:14px; align-items: stretch; justify-content:center; }
+    #board{
+      width: var(--board-size); height: var(--board-size); margin: 0 auto; border-radius: 18px; overflow: hidden; background: #fff;
+      box-shadow: 0 20px 40px rgba(0,0,0,.25), 0 0 0 1px rgba(255,255,255,.08);
+    }
+    .evalbar{
+      position: relative; width: 22px; border-radius: 12px; overflow: hidden;
+      border: 1px solid var(--glass-border); background: #111; flex: 0 0 22px;
+      box-shadow: inset 0 0 0 1px rgba(255,255,255,.05);
+    }
+    .eval-white, .eval-black{
+      position:absolute; left:0; right:0; transition: height .25s ease;
+    }
+    .eval-white{ top:0; height:50%; background: #fff; }
+    .eval-black{ bottom:0; height:50%; background: #000; }
+    .eval-notch{
+      position:absolute; left:-6px; right:-6px; height:2px; background: rgba(255,255,255,.6);
+      box-shadow: 0 0 8px rgba(0,0,0,.4); transition: bottom .25s ease;
+    }
+    .eval-label{
+      position:absolute; right: 28px; transform: translateY(50%);
+      padding: 4px 8px; font-size: 12px; font-weight:700; border-radius: 8px;
+      background: rgba(255,255,255,.12); border:1px solid var(--glass-border);
+      backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+      white-space: nowrap;
+    }
+
+    /* Moves table */
+    .table-wrap{ overflow:auto; -webkit-overflow-scrolling: touch; }
+    table{ width:100%; border-collapse: collapse; font-size: 14px; }
+    th, td{ padding: 10px 10px; border-bottom: 1px solid var(--glass-border); }
+    thead th{ position: sticky; top: 0; background: rgba(0,0,0,.18); backdrop-filter: blur(6px); }
+    tr{ cursor:pointer; }
+    tr:hover{ background: rgba(255,255,255,.08); }
+
+    .tag{ font-size: 12px; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--glass-border); display:inline-block; }
+    .best{ background:#dcfce7; color:#166534; border-color:#86efac; font-weight:700; }
+    .good{ background:#ecfeff; color:#155e75; border-color:#a5f3fc; }
+    .inaccuracy{ background:#fff7ed; color:#9a3412; border-color:#fed7aa; }
+    .mistake{ background:#fef2f2; color:#991b1b; border-color:#fecaca; }
+    .blunder{ background:#fee2e2; color:#7f1d1d; border-color:#fca5a5; font-weight:800; }
+
+    /* Micro helpers */
+    .meta{ color: var(--muted); font-size: 12px; }
+    .loading{ position:relative; overflow:hidden; }
+    .loading::after{
+      content:''; position:absolute; inset:0; left:-100%;
+      background: linear-gradient(90deg, transparent, rgba(255,255,255,.18), transparent);
+      animation: shimmer 1.6s infinite;
+    }
+    @keyframes shimmer{ 0%{ left:-100%; } 100%{ left:100%; } }
+
+    @media (max-width: 560px){
+      th.hide-sm, td.hide-sm{ display:none; }
+    }
   </style>
 </head>
 <body>
-  <h2>Game Analysis</h2>
-  <div class="wrap">
-    <div>
-      <div id="board"></div>
-      <div class="controls">
-        <button id="btnStart">⏮ Start</button>
-        <button id="btnPrev">◀︎ Prev</button>
-        <button id="btnPlay">▶︎ Play</button>
-        <button id="btnNext">Next ▶︎</button>
-        <button id="btnEnd">End ⏭</button>
-      </div>
-      <div class="meta">
-        <span id="status" class="pill">Loading…</span>
-      </div>
-      <div class="meta">
-        <span class="pill" id="summaryPill" style="display:none"></span>
-        <a id="downloadPGN" class="pill" style="display:none" download="analysis.pgn">Download PGN</a>
-      </div>
-      <p class="eval">
-        <strong>Position:</strong> <span id="posLabel">0 / 0</span> · 
-        <strong>Turn:</strong> <span id="turnLabel">-</span> ·
-        <strong>Eval:</strong> <span id="evalLabel">-</span> ·
-        <strong>Δ:</strong> <span id="deltaLabel">-</span> ·
-        <strong>Best:</strong> <span id="bestLabel">-</span>
-      </p>
-      <p>
-        Tips: use <span class="kbd">←</span>/<span class="kbd">→</span> to step, <span class="kbd">Space</span> to play/pause.
-      </p>
+  <!-- Back button -->
+  <div class="back-nav">
+    <button class="back-btn" onclick="history.back()">← Back</button>
+  </div>
+
+  <div class="container">
+    <div class="header" style="grid-column: 1 / -1;">
+      <h1 class="title">Game Analysis</h1>
+      <p class="subtitle">Step through moves, see engine evals, and review mistakes</p>
     </div>
 
-    <div>
-      <div class="right-top">
-        <div class="pill" id="resultPill" style="display:none"></div>
-        <div></div>
+    <!-- Left column: board + controls -->
+    <div class="card">
+      <div class="section">
+        <div class="board-row">
+          <div id="board"></div>
+
+          <!-- Eval bar -->
+          <div class="evalbar" aria-label="Engine evaluation bar (White at top, Black at bottom)">
+            <div class="eval-white" id="evalWhite"></div>
+            <div class="eval-black" id="evalBlack"></div>
+            <div class="eval-notch" id="evalNotch" style="bottom:50%"></div>
+            <div class="eval-label" id="evalBubble" style="bottom:50%">—</div>
+          </div>
+        </div>
+
+        <div class="btn-group" style="margin-top:14px;">
+          <button id="btnStart" class="btn">⏮ Start</button>
+          <button id="btnPrev" class="btn">◀︎ Prev</button>
+          <button id="btnPlay" class="btn btn-primary">▶︎ Play</button>
+          <button id="btnNext" class="btn">Next ▶︎</button>
+          <button id="btnEnd" class="btn">End ⏭</button>
+        </div>
+
+        <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center; justify-content:center; margin-top:10px;">
+          <span class="pill" id="status">Loading…</span>
+          <a id="downloadPGN" class="pill" style="display:none" download="analysis.pgn">⬇️ Download PGN</a>
+        </div>
+
+        <div class="meta" style="text-align:center; margin-top:10px;">
+          Tips: ← / → to step · Space to play/pause
+        </div>
+
+        <div style="text-align:center; margin-top:10px; font-variant-numeric: tabular-nums;">
+          <strong>Position:</strong> <span id="posLabel">0 / 0</span> ·
+          <strong>Turn:</strong> <span id="turnLabel">-</span> ·
+          <strong>Eval:</strong> <span id="evalLabel">-</span> ·
+          <strong>Δ:</strong> <span id="deltaLabel">-</span> ·
+          <strong>Best:</strong> <span id="bestLabel">-</span>
+        </div>
+
+        <div style="display:flex; gap:8px; flex-wrap:wrap; justify-content:center; margin-top:10px;">
+          <span class="pill" id="summaryPill" style="display:none"></span>
+          <span class="pill" id="resultPill" style="display:none"></span>
+        </div>
       </div>
-      <table id="movesTable">
-        <thead>
-          <tr><th>#</th><th>Side</th><th>Move</th><th>Eval</th><th>Δ</th><th>Best</th><th>Tag</th></tr>
-        </thead>
-        <tbody></tbody>
-      </table>
+    </div>
+
+    <!-- Right column: moves table -->
+    <div class="card">
+      <div class="section">
+        <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:8px;">
+          <strong>Moves</strong>
+          <span class="meta" id="acplPill" style="display:none;"></span>
+        </div>
+        <div class="table-wrap">
+          <table id="movesTable">
+            <thead>
+              <tr>
+                <th>#</th><th class="hide-sm">Side</th><th>Move</th><th>Eval</th><th class="hide-sm">Δ</th><th class="hide-sm">Best</th><th>Tag</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
     </div>
   </div>
 
-<script type="module">
-  import { Chess } from '/vendor/chess.js?v=2';  // ESM build from dist/esm
+  <!-- chess.js (ESM). Adjust path if needed -->
+  <script type="module">
+    import { Chess } from '/vendor/chess.js?v=2';
 
-  (function(){
-    const game = new Chess();
+    (function(){
+      const MAX_PAWN = 6; // clamp for eval bar scaling (±6 pawns)
+      const board = Chessboard('board', {
+        position   : 'start',
+        draggable  : false,
+        pieceTheme : '/chessboardjs-1.0.0/img/chesspieces/wikipedia/{piece}.png'
+      });
 
-    const board = Chessboard('board', {
-      position   : 'start',
-      draggable  : false,
-      pieceTheme : '/chessboardjs-1.0.0/img/chesspieces/wikipedia/{piece}.png'
-    });
+      const statusEl    = document.getElementById('status');
+      const summaryPill = document.getElementById('summaryPill');
+      const resultPill  = document.getElementById('resultPill');
+      const acplPill    = document.getElementById('acplPill');
+      const downloadPGN = document.getElementById('downloadPGN');
 
-  const statusEl = document.getElementById('status');
-  const summaryPill = document.getElementById('summaryPill');
-  const resultPill  = document.getElementById('resultPill');
-  const downloadPGN = document.getElementById('downloadPGN');
+      const posLabel   = document.getElementById('posLabel');
+      const turnLabel  = document.getElementById('turnLabel');
+      const evalLabel  = document.getElementById('evalLabel');
+      const deltaLabel = document.getElementById('deltaLabel');
+      const bestLabel  = document.getElementById('bestLabel');
 
-  const posLabel   = document.getElementById('posLabel');
-  const turnLabel  = document.getElementById('turnLabel');
-  const evalLabel  = document.getElementById('evalLabel');
-  const deltaLabel = document.getElementById('deltaLabel');
-  const bestLabel  = document.getElementById('bestLabel');
+      const evalWhite  = document.getElementById('evalWhite');
+      const evalBlack  = document.getElementById('evalBlack');
+      const evalNotch  = document.getElementById('evalNotch');
+      const evalBubble = document.getElementById('evalBubble');
 
-  const tBody = document.querySelector('#movesTable tbody');
+      const tBody = document.querySelector('#movesTable tbody');
 
-  const btnStart = document.getElementById('btnStart');
-  const btnPrev  = document.getElementById('btnPrev');
-  const btnPlay  = document.getElementById('btnPlay');
-  const btnNext  = document.getElementById('btnNext');
-  const btnEnd   = document.getElementById('btnEnd');
+      const btnStart = document.getElementById('btnStart');
+      const btnPrev  = document.getElementById('btnPrev');
+      const btnPlay  = document.getElementById('btnPlay');
+      const btnNext  = document.getElementById('btnNext');
+      const btnEnd   = document.getElementById('btnEnd');
 
-  let analysis = null;
-  let positions = [];   // FENs per ply, positions[i] is after i plies (positions[0] = start)
-  let cur = 0;
-  let timer = null;
+      let analysis = null;
+      let positions = [];
+      let cur = 0;
+      let timer = null;
 
-  function setButtons(on){
-    [btnStart,btnPrev,btnNext,btnEnd,btnPlay].forEach(b=> b.disabled = !on);
-  }
+      function setButtons(on){ [btnStart,btnPrev,btnNext,btnEnd,btnPlay].forEach(b=> b.disabled = !on); }
 
-  function clearHighlights(){
-    document.querySelectorAll('#board .square-55d63, #board [class*=square-]').forEach(el=>{
-      el.classList.remove('hl','hl2');
-    });
-  }
-
-  function getSquareEl(sq){ return document.querySelector(`#board .square-${sq}`); }
-
-  // Highlight last actual move (orange) and best move for side to move (indigo)
-  function highlightForIndex(i){
-    clearHighlights();
-    // last move that produced this position: i>0 -> moves[i-1]
-    if (i > 0) {
-      const gPrev = new Chess(positions[i-1]);
-      const san   = analysis.moves[i-1].move;
-      const mv    = gPrev.move(san, {sloppy:true});
-      if (mv) {
-        const a = getSquareEl(mv.from), b = getSquareEl(mv.to);
-        a && a.classList.add('hl'); b && b.classList.add('hl');
+      function clearHighlights(){
+        document.querySelectorAll('#board [class*=square-]').forEach(el=>{
+          el.style.outline = ''; el.style.boxShadow='';
+        });
       }
-    }
-    // best move from current position = analysis.moves[i]?.best (engine best before next ply)
-    if (i < analysis.moves.length) {
-      const bestSan = analysis.moves[i].best;
-      if (bestSan) {
-        const gNow = new Chess(positions[i]);
-        const mv2  = gNow.move(bestSan, {sloppy:true});
-        if (mv2) {
-          const a = getSquareEl(mv2.from), b = getSquareEl(mv2.to);
-          a && a.classList.add('hl2'); b && b.classList.add('hl2');
+      function getSquareEl(sq){ return document.querySelector(`#board .square-${sq}`); }
+      function mark(el, color){
+        if (!el) return;
+        el.style.outline = `3px solid ${color}`;
+        el.style.boxShadow = 'inset 0 0 0 2px #fff';
+      }
+
+      function highlightForIndex(i){
+        clearHighlights();
+        if (i > 0) {
+          const gPrev = new Chess(positions[i-1]);
+          const san   = analysis.moves[i-1].move;
+          const mv    = gPrev.move(san, {sloppy:true});
+          if (mv) { mark(getSquareEl(mv.from),'rgba(245,158,11,.92)'); mark(getSquareEl(mv.to),'rgba(245,158,11,.92)'); }
+        }
+        if (i < analysis.moves.length) {
+          const bestSan = analysis.moves[i].best;
+          if (bestSan) {
+            const gNow = new Chess(positions[i]);
+            const mv2  = gNow.move(bestSan, {sloppy:true});
+            if (mv2) { mark(getSquareEl(mv2.from),'rgba(99,102,241,.92)'); mark(getSquareEl(mv2.to),'rgba(99,102,241,.92)'); }
+          }
         }
       }
-    }
-  }
 
-  function showInfoForIndex(i){
-    posLabel.textContent = `${i} / ${analysis.moves.length}`;
-    const g = new Chess(positions[i]);
-    turnLabel.textContent = g.turn() === 'w' ? 'White' : 'Black';
+      function showInfoForIndex(i){
+        posLabel.textContent = `${i} / ${analysis.moves.length}`;
+        const g = new Chess(positions[i]);
+        turnLabel.textContent = g.turn() === 'w' ? 'White' : 'Black';
 
-    // Eval/Δ/Best for the move ABOUT to be played from this position = analysis.moves[i]
-    if (i < analysis.moves.length) {
-      const r = analysis.moves[i];
-      evalLabel.textContent = (r.mate_after !== null) ? `M${Math.abs(r.mate_after)}` :
-        (r.eval_after == null ? '-' : (r.eval_after >= 0 ? `+${r.eval_after.toFixed(2)}` : r.eval_after.toFixed(2)));
-      deltaLabel.textContent = (r.delta == null ? '-' : (r.delta >= 0 ? `+${r.delta.toFixed(2)}` : r.delta.toFixed(2)));
-      bestLabel.textContent  = r.best || '-';
-    } else {
-      evalLabel.textContent = deltaLabel.textContent = bestLabel.textContent = '-';
-    }
-  }
+        if (i < analysis.moves.length) {
+          const r = analysis.moves[i];
+          evalLabel.textContent = (r.mate_after !== null) ? `M${Math.abs(r.mate_after)}` :
+            (r.eval_after == null ? '-' : (r.eval_after >= 0 ? `+${r.eval_after.toFixed(2)}` : r.eval_after.toFixed(2)));
+          deltaLabel.textContent = (r.delta == null ? '-' : (r.delta >= 0 ? `+${r.delta.toFixed(2)}` : r.delta.toFixed(2)));
+          bestLabel.textContent  = r.best || '-';
+        } else {
+          evalLabel.textContent = deltaLabel.textContent = bestLabel.textContent = '-';
+        }
+      }
 
-  function gotoIndex(i){
-    i = Math.max(0, Math.min(i, positions.length-1));
-    cur = i;
-    board.position(positions[i], true);
-    highlightForIndex(i);
-    showInfoForIndex(i);
-    // row highlight
-    tBody.querySelectorAll('tr').forEach(tr => tr.style.background = '');
-    if (i>0) {
-      const tr = document.getElementById(`row-${i-1}`);
-      tr && (tr.style.background = '#f1f5f9');
-    }
-  }
+      function whiteEvalFromResult(r){
+        // Return eval from White's perspective in pawns; very large for mate.
+        if (!r) return null;
+        if (r.mate_after !== null) {
+          const signForMover = r.mate_after > 0 ? 1 : -1;     // + => mate for mover
+          const signWhite    = (r.side === 'White') ? signForMover : -signForMover; // + => mate for White
+          return signWhite * (MAX_PAWN * 2); // push to extremes
+        }
+        if (r.eval_after == null) return null;
+        let cp = r.eval_after;                 // cp in pawns for mover
+        if (r.side === 'Black') cp = -cp;      // convert to White POV
+        return cp;
+      }
 
-  function next(){ gotoIndex(cur+1); }
-  function prev(){ gotoIndex(cur-1); }
-  function start(){ gotoIndex(0); }
-  function end(){ gotoIndex(positions.length-1); }
+      function evalToPct(cpWhite){
+        // Map cp in pawns to 0..100% (top=White advantage)
+        if (cpWhite === null) return 50;
+        const x = Math.max(-MAX_PAWN, Math.min(MAX_PAWN, cpWhite));
+        return (x + MAX_PAWN) / (2 * MAX_PAWN) * 100;
+      }
 
-  function togglePlay(){
-    if (timer) {
-      clearInterval(timer); timer = null; btnPlay.textContent = '▶︎ Play'; return;
-    }
-    btnPlay.textContent = '⏸ Pause';
-    timer = setInterval(() => {
-      if (cur >= positions.length-1) { togglePlay(); return; }
-      next();
-    }, 600);
-  }
+      function formatEvalBubble(r){
+        if (!r) return '—';
+        if (r.mate_after !== null){
+          const wMateSign = (r.side === 'White') ? Math.sign(r.mate_after) : -Math.sign(r.mate_after);
+          return wMateSign > 0 ? `M${Math.abs(r.mate_after)}` : `-M${Math.abs(r.mate_after)}`;
+        }
+        let cp = r.eval_after;
+        if (cp == null) return '—';
+        if (r.side === 'Black') cp = -cp;
+        return (cp >= 0 ? `+${cp.toFixed(2)}` : cp.toFixed(2));
+      }
 
-  btnStart.onclick = start;
-  btnPrev.onclick  = prev;
-  btnNext.onclick  = next;
-  btnEnd.onclick   = end;
-  btnPlay.onclick  = togglePlay;
+      function updateEvalBarForIndex(i){
+        const r = (i > 0) ? analysis.moves[i-1] : null; // show eval after the move that led to this position
+        const cpW = whiteEvalFromResult(r);
+        const pct = evalToPct(cpW);
+        evalWhite.style.height = `${pct}%`;
+        evalBlack.style.height = `${100 - pct}%`;
+        evalNotch.style.bottom = `${100 - pct}%`;
+        evalBubble.style.bottom = `${100 - pct}%`;
+        evalBubble.textContent = formatEvalBubble(r);
+      }
 
-  window.addEventListener('keydown', (e)=>{
-    if (e.target && ['INPUT','TEXTAREA'].includes(e.target.tagName)) return;
-    if (e.code === 'ArrowLeft') { prev(); e.preventDefault(); }
-    if (e.code === 'ArrowRight') { next(); e.preventDefault(); }
-    if (e.code === 'Space') { togglePlay(); e.preventDefault(); }
-  });
+      function gotoIndex(i){
+        i = Math.max(0, Math.min(i, positions.length - 1));
+        cur = i;
+        board.position(positions[i], true);
+        highlightForIndex(i);
+        showInfoForIndex(i);
+        updateEvalBarForIndex(i);
 
-  async function analyze(){
-    setButtons(false);
-    statusEl.textContent = 'Analyzing…';
-    try {
-      const res = await fetch('/analyze', {
-        method:'POST',
-        headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({ depth: 14 }) // or { movetime_ms: 200 }
-      });
-      if (!res.ok) throw new Error(await res.text());
-      analysis = await res.json();
+        tBody.querySelectorAll('tr').forEach(tr => tr.style.background = '');
+        if (i > 0) {
+          const tr = document.getElementById(`row-${i-1}`);
+          tr && (tr.style.background = 'rgba(124,154,255,.12)');
+          tr && tr.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+        }
+      }
 
-      // Build positions: start + after each SAN
-      const g = new Chess(); // startpos
-      positions = [g.fen()];
-      analysis.moves.forEach(r => {
-        try { g.move(r.move, {sloppy:true}); } catch(e) {}
-        positions.push(g.fen());
-      });
+      function next(){ gotoIndex(cur + 1); }
+      function prev(){ gotoIndex(cur - 1); }
+      function start(){ gotoIndex(0); }
+      function end(){ gotoIndex(positions.length - 1); }
 
-      // Fill summary + pgn
-      summaryPill.style.display = '';
-      summaryPill.textContent =
-        `Result ${analysis.summary.result} · ` +
-        `W best/bl/mk/inacc ${analysis.summary.white.best}/${analysis.summary.white.blunder}/${analysis.summary.white.mistake}/${analysis.summary.white.inaccuracy} · ` +
-        `B best/bl/mk/inacc ${analysis.summary.black.best}/${analysis.summary.black.blunder}/${analysis.summary.black.mistake}/${analysis.summary.black.inaccuracy}`;
+      function togglePlay(){
+        if (timer) { clearInterval(timer); timer = null; btnPlay.textContent = '▶︎ Play'; return; }
+        btnPlay.textContent = '⏸ Pause';
+        timer = setInterval(() => {
+          if (cur >= positions.length - 1) { togglePlay(); return; }
+          next();
+        }, 600);
+      }
 
-      resultPill.style.display = '';
-      resultPill.textContent = `Moves: ${analysis.moves.length}`;
+      btnStart.onclick = start;
+      btnPrev.onclick  = prev;
+      btnNext.onclick  = next;
+      btnEnd.onclick   = end;
+      btnPlay.onclick  = togglePlay;
 
-      downloadPGN.style.display = '';
-      downloadPGN.href = URL.createObjectURL(new Blob([analysis.pgn], {type:'text/plain'}));
-
-      // Fill move table
-      tBody.innerHTML = '';
-      analysis.moves.forEach((r, idx)=>{
-        const tr = document.createElement('tr');
-        tr.id = `row-${idx}`;
-        const td = (txt)=>{ const c = document.createElement('td'); c.textContent = txt; return c; };
-
-        tr.appendChild(td(r.ply));
-        tr.appendChild(td(r.side[0]));  // W/B
-        tr.appendChild(td(r.move));
-        tr.appendChild(td(
-          r.mate_after !== null ? `M${Math.abs(r.mate_after)}` :
-          (r.eval_after===null ? '' : (r.eval_after>=0?`+${r.eval_after.toFixed(2)}`:`${r.eval_after.toFixed(2)}`))
-        ));
-        tr.appendChild(td(r.delta==null ? '' : (r.delta>=0?`+${r.delta.toFixed(2)}`:`${r.delta.toFixed(2)}`)));
-        tr.appendChild(td(r.best || ''));
-
-        const tagCell = document.createElement('td');
-        const span = document.createElement('span');
-        const tag = r.tag || 'good';
-        span.className = `tag ${tag}`;
-        span.textContent = tag;
-        tagCell.appendChild(span);
-        tr.appendChild(tagCell);
-
-        tr.onclick = ()=> gotoIndex(idx); // jump to position AFTER this move
-        tBody.appendChild(tr);
+      window.addEventListener('keydown', (e)=>{
+        if (e.target && ['INPUT','TEXTAREA'].includes(e.target.tagName)) return;
+        if (e.code === 'ArrowLeft')  { prev(); e.preventDefault(); }
+        if (e.code === 'ArrowRight') { next(); e.preventDefault(); }
+        if (e.code === 'Space')      { togglePlay(); e.preventDefault(); }
       });
 
-      statusEl.textContent = 'Done. Use the controls or click any row.';
-      setButtons(true);
-      gotoIndex(0);
+      async function analyze(){
+        setButtons(false);
+        statusEl.textContent = 'Analyzing…';
+        try{
+          const res = await fetch('/analyze', {
+            method:'POST',
+            headers:{'Content-Type':'application/json'},
+            body: JSON.stringify({ depth: 14 })
+          });
+          if (!res.ok) throw new Error(await res.text());
+          analysis = await res.json();
 
-    } catch (e) {
-      statusEl.textContent = `Analysis failed: ${e.message}`;
-    }
-  }
+          // build positions array
+          const g = new Chess();
+          positions = [g.fen()];
+          (analysis.moves || []).forEach(r => {
+            try { g.move(r.move, {sloppy:true}); } catch {}
+            positions.push(g.fen());
+          });
 
-  analyze();
-})();
-</script>
+          // Summary + result
+          const s = analysis.summary || {};
+          if (s.white && s.black){
+            acplPill.style.display = '';
+            acplPill.textContent = `ACPL — W: ${s.acpl_white ?? '-'} · B: ${s.acpl_black ?? '-'}`;
+            summaryPill.style.display = '';
+            summaryPill.textContent =
+              `W best/inacc/mist/bl: ${s.white.best}/${s.white.inaccuracy}/${s.white.mistake}/${s.white.blunder} · ` +
+              `B best/inacc/mist/bl: ${s.black.best}/${s.black.inaccuracy}/${s.black.mistake}/${s.black.blunder}`;
+          }
+          resultPill.style.display = '';
+          resultPill.textContent = `Result: ${s.result || '*'}`;
+
+          downloadPGN.style.display = '';
+          downloadPGN.href = URL.createObjectURL(new Blob([analysis.pgn || ''], {type:'text/plain'}));
+
+          // Populate table
+          tBody.innerHTML = '';
+          (analysis.moves || []).forEach((r, idx)=>{
+            const tr = document.createElement('tr');
+            tr.id = `row-${idx}`;
+            const td = (txt, cls='')=>{ const c = document.createElement('td'); c.textContent = txt; if (cls) c.className = cls; return c; };
+            tr.appendChild(td(r.ply));
+            tr.appendChild(td(r.side?.[0] || '', 'hide-sm'));
+            tr.appendChild(td(r.move || ''));
+            tr.appendChild(td(
+              r.mate_after !== null && r.mate_after !== undefined
+                ? `M${Math.abs(r.mate_after)}`
+                : (r.eval_after==null ? '' : (r.eval_after>=0?`+${r.eval_after.toFixed(2)}`:`${r.eval_after.toFixed(2)}`))
+            ));
+            tr.appendChild(td(r.delta==null ? '' : (r.delta>=0?`+${r.delta.toFixed(2)}`:`${r.delta.toFixed(2)}`), 'hide-sm'));
+            tr.appendChild(td(r.best || '', 'hide-sm'));
+
+            const tagCell = document.createElement('td');
+            const span = document.createElement('span');
+            const tag = r.tag || 'good';
+            span.className = `tag ${tag}`;
+            span.textContent = tag;
+            tagCell.appendChild(span);
+            tr.appendChild(tagCell);
+
+            tr.onclick = ()=> gotoIndex(idx);
+            tBody.appendChild(tr);
+          });
+
+          statusEl.textContent = 'Done. Tap any row to jump.';
+          setButtons(true);
+          gotoIndex(0);
+        }catch(e){
+          statusEl.textContent = `Analysis failed: ${e.message}`;
+        }
+      }
+
+      analyze();
+    })();
+  </script>
 </body>
 </html>
