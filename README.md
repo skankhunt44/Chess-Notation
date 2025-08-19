@@ -1,8 +1,10 @@
 # Chess Tracker — AI-powered OTB Board Tracking & Analysis
 
-Use your **phone camera** to detect a real chessboard, classify every square (empty / white / black) with a lightweight CNN, reconstruct positions & moves, and **analyze the game with Stockfish** in a clean, mobile-first UI.
+Track over-the-board moves from the standard start position and review them with Stockfish.
 
 > **Note**: This is a live **board tracker & analysis tool**, not an official “scorekeeper.” It infers positions and moves from vision; use PGN export at your discretion.
+> **Assumption**: Tracking begins from the standard starting position. Mid-game resync and arbitrary position reconstruction aren’t supported yet; if tracking is lost, start a new game.
+
 
 <p align="center">
   <img src="assets/readme/tracker_home.png" width="72%" alt="Live tracker home screen"/>
@@ -14,7 +16,7 @@ Use your **phone camera** to detect a real chessboard, classify every square (em
 
 - **One-tap calibration** — lock onto the board via homography.
 - **Real-time square classification** — 64 crops → CNN (Empty/White/Black).
-- **Position & move reconstruction** — FEN/PGN with move history.
+- **Move tracking (from standard start)** — PGN move list with timestamps.
 - **Engine review** — Stockfish evals, best-move arrows, ACPL & mistake tags.
 - **Built-in dataset tooling** — capture, label, preprocess, and retrain from your phone.
 - **Mobile-first UI** — fast interactions, large controls, smooth animations.
@@ -34,7 +36,7 @@ Use your **phone camera** to detect a real chessboard, classify every square (em
 ---
 
 ## 🧠 How it Works
-
+```text
 Phone Camera (WebRTC)
         │
         ▼
@@ -47,11 +49,11 @@ Split into 64 Square Crops (N×N)
 Tiny CNN → {empty, white, black} per square
         │
         ▼
-Board State → Move Diff → FEN/PGN
+Frame-to-frame diff → Move from start position → PGN
         │
         ├─▶ UI (live board, history)
         └─▶ Stockfish (evals, best lines)
-
+```
 
 
 - **Vision**: OpenCV for corner finding & top-down warp.  
