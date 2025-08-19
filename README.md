@@ -1,21 +1,44 @@
-To run use 2 terminal
+# Chess-Notation
 
-terminal 1:
-uvicorn app:app --reload --host 0.0.0.0 --port 8000
+## Installation
 
-uvicorn app:app --host 0.0.0.0 --port 8000 --timeout-keep-alive 75
+Install Python dependencies:
 
+```
+pip install -r requirement.txt
+```
 
-terminal 2:
+## Running the server
+
+Start the FastAPI application:
+
+```
+uvicorn app:app --host 0.0.0.0 --port 8000 --reload
+```
+
+`--reload` automatically reloads the server on code changes and can be
+omitted in production.
+
+To make the server accessible from the internet (optional), run in another
+terminal:
+
+```
 ngrok http 8000
+```
 
-Open `http://localhost:8000` in a browser. After granting camera access press
-the **Calibrate board** button once with an empty board visible. Set up the
-pieces and press the button again to start tracking.
+## Usage
 
-The server keeps track of all recognised moves.  Fetch the current move
+Open `http://localhost:8000` in a browser (or the URL provided by ngrok).
+After granting camera access:
+
+1. Press the **Calibrate board** button once with an empty board visible.
+2. Set up the pieces.
+3. Press **Calibrate board** again to start tracking.
+
+The server keeps track of all recognised moves. Fetch the current move
 history (in SAN) via:
 
 ```
 GET /history
 ```
+
