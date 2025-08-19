@@ -307,7 +307,7 @@
         function setFlags(state) {
             if (!state) { flagsEl.style.display = 'none'; return; }
             const pills = [];
-            if (state.check) pills.push('Check');
+            if (state.check) pills.push('Checkmate');
             if (state.threefold_claimable) pills.push('Threefold claimable');
             if (state.fifty_moves_claimable) pills.push('50-move claimable');
             if (state.fivefold_repetition) pills.push('Auto-draw (5×)');
@@ -494,7 +494,7 @@
                         enableEndControls(false);
                         claimBtn.disabled = true;
                     } else if (msg.state.check) {
-                        statusEl.textContent = 'Check!';
+                        statusEl.textContent = 'Check';
                     }
                 } else {
                     claimBtn.disabled = true;

@@ -92,7 +92,7 @@ class ChessSquareDataset(Dataset):
         #                          [0.229, 0.224, 0.225]),
         # ])
         self.transform = transforms.Compose([
-            transforms.ToPILImage() if using_numpy else (lambda z: z),  # only if needed
+            transforms.Lambda(lambda z: z if torch.is_tensor(z) else transforms.ToPILImage()(z)),  # only if needed
             transforms.ColorJitter(brightness=0.25, contrast=0.2, saturation=0.15, hue=0.05),
             transforms.RandomApply([transforms.GaussianBlur(3, sigma=(0.1,1.0))], p=0.25),
             transforms.ToTensor(),

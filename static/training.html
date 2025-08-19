@@ -154,6 +154,51 @@
         .legend-color { width: 12px; height: 12px; border-radius: 50%; }
         .legend-empty { background: var(--glass); } .legend-white { background: #ffffff; } .legend-black { background: #000000; }
 
+        /* Training pipeline section */
+        .pipeline-section {
+            background: linear-gradient(135deg, rgba(139,92,246,.15), rgba(99,102,241,.1));
+            backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+            border: 1px solid rgba(139,92,246,.2); border-radius: 20px; padding: 24px;
+        }
+        .pipeline-title { 
+            font-size: 18px; font-weight: 600; margin-bottom: 12px; color: white; 
+            display: flex; align-items: center; justify-content: center; gap: 8px; 
+        }
+        .pipeline-subtitle { font-size: 14px; color: rgba(255,255,255,.7); text-align: center; margin-bottom: 20px; }
+        
+        .pipeline-steps { display: flex; flex-direction: column; gap: 16px; }
+        .step {
+            background: rgba(255,255,255,.05); border: 1px solid var(--glass-border); 
+            border-radius: 12px; padding: 16px; display: flex; align-items: center; gap: 12px;
+        }
+        .step-number {
+            background: var(--secondary); color: white; width: 32px; height: 32px; 
+            border-radius: 50%; display: flex; align-items: center; justify-content: center; 
+            font-weight: 600; font-size: 14px; flex-shrink: 0;
+        }
+        .step-content { flex: 1; }
+        .step-title { font-weight: 600; margin-bottom: 4px; }
+        .step-desc { font-size: 13px; color: rgba(255,255,255,.7); }
+
+        .train-btn {
+            background: linear-gradient(135deg, var(--secondary), #7c3aed); border: none; 
+            padding: 16px 32px; font-size: 16px; font-weight: 600; border-radius: 16px; 
+            box-shadow: 0 8px 25px rgba(139,92,246,.4); width: 100%;
+        }
+        .train-btn:hover { 
+            background: linear-gradient(135deg, #7c3aed, #6d28d9); transform: translateY(-2px); 
+            box-shadow: 0 12px 35px rgba(139,92,246,.5); 
+        }
+
+        .log-output {
+            background: rgba(0,0,0,.4); border: 1px solid var(--glass-border); 
+            border-radius: 12px; padding: 16px; margin-top: 16px; 
+            font-family: 'SF Mono', 'Monaco', 'Cascadia Code', monospace; 
+            font-size: 12px; line-height: 1.4; color: rgba(255,255,255,.8);
+            max-height: 200px; overflow-y: auto; white-space: pre-wrap;
+            display: none;
+        }
+
         @media (max-width: 640px) {
             .container { padding: 16px; }
             .btn-group { flex-direction: column; align-items: center; }
@@ -162,10 +207,11 @@
         }
 
         @keyframes fadeIn { from {opacity:0; transform: translateY(20px)} to {opacity:1; transform: translateY(0)} }
-        .card, .camera-section, .preview-container, .grid-container { animation: fadeIn .6s cubic-bezier(.4,0,.2,1) forwards; }
+        .card, .camera-section, .preview-container, .grid-container, .pipeline-section { animation: fadeIn .6s cubic-bezier(.4,0,.2,1) forwards; }
         .card:nth-child(2){ animation-delay: .1s } 
         .card:nth-child(3){ animation-delay: .2s } 
         .card:nth-child(4){ animation-delay: .3s }
+        .card:nth-child(5){ animation-delay: .4s }
 
         .back-nav {
             position: fixed;
@@ -249,6 +295,35 @@
                 <button id="newSampleBtn" class="btn btn-warning" style="margin-left: 12px;">🔄 Capture Another</button>
             </div>
         </div>
+
+        <div class="pipeline-section">
+            <div class="pipeline-title">🚀 AI Training Pipeline</div>
+            <div class="pipeline-subtitle">Process collected samples and retrain the AI model</div>
+            
+            <div class="pipeline-steps">
+                <div class="step">
+                    <div class="step-number">1</div>
+                    <div class="step-content">
+                        <div class="step-title">Preprocess Training Data</div>
+                        <div class="step-desc">Convert saved samples into training-ready format</div>
+                    </div>
+                </div>
+                <div class="step">
+                    <div class="step-number">2</div>
+                    <div class="step-content">
+                        <div class="step-title">Train AI Model</div>
+                        <div class="step-desc">Improve piece recognition using your labeled data</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="btn-group" style="margin-top: 20px;">
+                <button id="preprocessBtn" class="btn btn-warning">⚙️ Preprocess Data</button>
+                <button id="trainBtn" class="btn train-btn" disabled>🧠 Train AI Model</button>
+            </div>
+
+            <div class="log-output" id="logOutput"></div>
+        </div>
     </div>
 
     <script>
@@ -264,6 +339,11 @@
         const gridDiv = document.getElementById('grid');
         const previewContainer = document.getElementById('previewContainer');
         const gridContainer = document.getElementById('gridContainer');
+        
+        // Training pipeline elements
+        const preprocessBtn = document.getElementById('preprocessBtn');
+        const trainBtn = document.getElementById('trainBtn');
+        const logOutput = document.getElementById('logOutput');
 
         // ---------- State ----------
         let stream = null;
@@ -312,6 +392,17 @@
         function setStatus(msg) {
             statusEl.textContent = msg;
             console.log('[training]', msg);
+        }
+
+        function appendLog(msg) {
+            logOutput.style.display = 'block';
+            logOutput.textContent += msg + '\n';
+            logOutput.scrollTop = logOutput.scrollHeight;
+        }
+
+        function clearLog() {
+            logOutput.textContent = '';
+            logOutput.style.display = 'none';
         }
 
         // ---------- Camera Functions ----------
@@ -529,67 +620,181 @@
                 const res = await fetch('/save-sample', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ 
-                        labels: curLabels, 
-                        image_b64: curWarp || '' 
+                    body: JSON.stringify({
+                        labels: curLabels,
+                        warp_png: curWarp
                     })
                 });
-                
-                if (res.ok) {
-                    setStatus('Training sample saved successfully! ✅');
-                    // Reset for next sample
-                    setTimeout(() => {
-                        previewContainer.style.display = 'none';
-                        gridContainer.style.display = 'none';
-                        curLabels = null;
-                        curWarp = null;
-                        captureBtn.disabled = false;
-                        setStatus('Ready to capture another training sample');
-                    }, 1500);
-                } else {
+
+                if (!res.ok) {
                     const errorText = await res.text();
-                    setStatus(`Failed to save: ${errorText}`);
+                    throw new Error(`Save failed: ${errorText}`);
                 }
+
+                const result = await res.json();
+                setStatus(`Training sample saved! ${result.message || 'Ready for next capture.'}`);
+                
+                // Enable preprocessing button since we now have samples
+                preprocessBtn.disabled = false;
+                
             } catch (e) {
                 console.error('Save error:', e);
-                setStatus(`Error saving: ${e.message}`);
+                setStatus(`Save failed: ${e.message}`);
             } finally {
                 saveBtn.classList.remove('loading');
             }
         }
 
-        function prepareNewSample() {
+        // ---------- New Sample ----------
+        function newSample() {
             previewContainer.style.display = 'none';
             gridContainer.style.display = 'none';
             curLabels = null;
             curWarp = null;
-            captureBtn.disabled = false;
             setStatus('Ready to capture another training sample');
         }
 
-        // ---------- Event Listeners ----------
-        enableBtn.addEventListener('click', requestCamera);
-        calibrateBtn.addEventListener('click', calibrateBoard);
-        captureBtn.addEventListener('click', captureAndAnalyze);
-        saveBtn.addEventListener('click', saveSample);
-        newSampleBtn.addEventListener('click', prepareNewSample);
+        // ---------- Training Pipeline Functions ----------
+        async function preprocessData() {
+            try {
+                preprocessBtn.classList.add('loading');
+                preprocessBtn.disabled = true;
+                clearLog();
+                appendLog('Starting data preprocessing...');
+                setStatus('Preprocessing training data...');
 
-        // ---------- Initial Setup ----------
-        if (!isSecure()) {
-            setStatus('HTTPS required for camera access • Use localhost or secure hosting');
+                const res = await fetch('/preprocess', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+
+                if (!res.ok) {
+                    const errorText = await res.text();
+                    throw new Error(`Preprocessing failed: ${errorText}`);
+                }
+
+                // Handle streaming response for real-time logs
+                const reader = res.body.getReader();
+                const decoder = new TextDecoder();
+                
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+                    
+                    const chunk = decoder.decode(value, { stream: true });
+                    const lines = chunk.split('\n');
+                    
+                    for (const line of lines) {
+                        if (line.trim()) {
+                            try {
+                                const data = JSON.parse(line);
+                                if (data.log) {
+                                    appendLog(data.log);
+                                }
+                                if (data.status) {
+                                    setStatus(data.status);
+                                }
+                                if (data.complete) {
+                                    trainBtn.disabled = false;
+                                    setStatus('Preprocessing complete! Ready to train AI model.');
+                                    appendLog('✅ Preprocessing completed successfully');
+                                }
+                            } catch (e) {
+                                // Handle non-JSON lines (raw output)
+                                appendLog(line);
+                            }
+                        }
+                    }
+                }
+
+            } catch (e) {
+                console.error('Preprocessing error:', e);
+                setStatus(`Preprocessing failed: ${e.message}`);
+                appendLog(`❌ Error: ${e.message}`);
+            } finally {
+                preprocessBtn.classList.remove('loading');
+                preprocessBtn.disabled = false;
+            }
+        }
+
+        async function trainModel() {
+            try {
+                trainBtn.classList.add('loading');
+                trainBtn.disabled = true;
+                clearLog();
+                appendLog('Starting AI model training...');
+                setStatus('Training AI model with your data...');
+
+                const res = await fetch('/train', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+
+                if (!res.ok) {
+                    const errorText = await res.text();
+                    throw new Error(`Training failed: ${errorText}`);
+                }
+
+                // Handle streaming response for real-time logs
+                const reader = res.body.getReader();
+                const decoder = new TextDecoder();
+                
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+                    
+                    const chunk = decoder.decode(value, { stream: true });
+                    const lines = chunk.split('\n');
+                    
+                    for (const line of lines) {
+                        if (line.trim()) {
+                            try {
+                                const data = JSON.parse(line);
+                                if (data.log) {
+                                    appendLog(data.log);
+                                }
+                                if (data.status) {
+                                    setStatus(data.status);
+                                }
+                                if (data.complete) {
+                                    setStatus('🎉 AI model training complete! Your chess tracker is now improved.');
+                                    appendLog('✅ Training completed successfully');
+                                    appendLog('🚀 Updated model is ready for use');
+                                }
+                            } catch (e) {
+                                // Handle non-JSON lines (raw output)
+                                appendLog(line);
+                            }
+                        }
+                    }
+                }
+
+            } catch (e) {
+                console.error('Training error:', e);
+                setStatus(`Training failed: ${e.message}`);
+                appendLog(`❌ Error: ${e.message}`);
+            } finally {
+                trainBtn.classList.remove('loading');
+                trainBtn.disabled = false;
+            }
+        }
+
+        // ---------- Event Listeners ----------
+        enableBtn.onclick = requestCamera;
+        calibrateBtn.onclick = calibrateBoard;
+        captureBtn.onclick = captureAndAnalyze;
+        saveBtn.onclick = saveSample;
+        newSampleBtn.onclick = newSample;
+        preprocessBtn.onclick = preprocessData;
+        trainBtn.onclick = trainModel;
+
+        // Auto-enable camera on load if supported
+        if (isSecure() && navigator.mediaDevices?.getUserMedia) {
+            // Auto-start camera after a brief delay
+            setTimeout(() => {
+                if (!stream) requestCamera();
+            }, 500);
         }
     </script>
-
-    <script>
-        // Debug console for mobile (optional)
-        (function () {
-            if (!/[?&]debug=1\b/.test(location.search)) return;
-            var s = document.createElement('script');
-            s.src = 'https://cdn.jsdelivr.net/npm/eruda';
-            s.onload = function () { eruda.init(); console.log('Eruda ready'); };
-            document.head.appendChild(s);
-        })();
-    </script>
-
 </body>
 </html>

@@ -5,6 +5,7 @@ Manages preprocessing and training commands for the chess square classifier.
 Commands are run from the chess_cnn directory with correct paths.
 """
 
+import sys
 import subprocess
 import threading
 import json
@@ -89,21 +90,21 @@ class TrainingPipeline:
                     status_code=400
                 )
             
-            # Build the preprocessing command (run from chess_cnn directory)
-            src_dir = f"../data/{current_session.name}/samples"  # Relative to chess_cnn
-            dst_dir = "../data/crops_my_cam"  # Relative to chess_cnn
+            # Build the preprocessing command (run from project root)
+            src_dir = f"data/{current_session.name}/samples"  # Relative to project root
+            dst_dir = "data/crops_my_cam"  # Relative to project root
             
             cmd = [
-                'python', 'chess_square_classifier2.py', 'preprocess',
+                sys.executable, 'chess_cnn/chess_square_classifier2.py', 'preprocess',
                 '--src-dir', src_dir,
                 '--dst-dir', dst_dir,
                 '--workers', '2'
             ]
             
             print(f"Preprocessing from {current_session}")
-            print(f"Running command in {self.chess_cnn_dir}: {' '.join(cmd)}")
+            print(f"Running command from project root: {' '.join(cmd)}")
             
-            return self.stream_command_output(cmd, cwd=str(self.chess_cnn_dir))
+            return self.stream_command_output(cmd, cwd=None)  # Run from current directory (project root)
             
         except Exception as e:
             print(f"Preprocessing error: {e}")
@@ -128,11 +129,11 @@ class TrainingPipeline:
             
             # Build the training command (run from chess_cnn directory)
             cmd = [
-                'python', 'chess_square_classifier2.py', 'train',
+                sys.executable, 'chess_square_classifier2.py', 'train',
                 '--data-dir', '../data/crops_my_cam',  # Relative to chess_cnn
                 '--preprocessed',
-                '--epochs', '6',
-                '--batch-size', '256',
+                '--epochs', '5',
+                '--batch-size', '16',
                 '--lr', '2e-4',
                 '--resume', '../assets/model.pt',  # Relative to chess_cnn
                 '--model-out', '../assets/model.pt'  # Relative to chess_cnn
@@ -162,7 +163,7 @@ class TrainingPipeline:
                 "can_train": crops_dir.exists() and any(crops_dir.iterdir()) and model_path.exists()
             }
             
-            # Count samples in current session
+            # Count samples in current sessionß
             if current_session:
                 samples_dir = current_session / "samples"
                 if samples_dir.exists():
