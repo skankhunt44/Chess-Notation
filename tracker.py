@@ -111,7 +111,6 @@ class SquareTracker:
             st.winner = self._forced_result["winner"]
         return st
 
-    # ... keep your update() with promotion dedup as we discussed ...
     def update(self, new_occ: np.ndarray):
         if np.array_equal(new_occ, self.prev):
             return None, None, asdict(self._state())

@@ -370,42 +370,6 @@ def _make_config(meta):
     return cfg
 
 
-# def preprocess_dataset(src: str | Path, dst: str | Path, workers: int = 6, board_size: int = 800, square_size: int = 64):
-#     src, dst = Path(src), Path(dst)
-#     for cls in CLASS_MAP:
-#         (dst / cls).mkdir(parents=True, exist_ok=True)
-#     imgs = sorted(list(src.glob("*.jpg")) + list(src.glob("*.png")), key=lambda p: int(p.stem))
-
-#     def process(img_path: Path):
-#         with open(img_path.with_suffix(".json")) as f:
-#             meta = json.load(f)
-
-#         config = _make_config(meta)
-
-#         img = cv2.cvtColor(cv2.imread(str(img_path)), cv2.COLOR_BGR2RGB)
-#         h, w = img.shape[:2]
-#         H = compute_homography(meta["corners"], w, h, size=board_size)
-#         warped = warp_board(img, H, size=board_size)
-#         cell_px = board_size // 8
-#         for r in range(8):
-#             for c in range(8):
-#                 crop = warped[r * cell_px : (r + 1) * cell_px, c * cell_px : (c + 1) * cell_px]
-#                 crop = cv2.resize(crop, (square_size, square_size))
-#                 sq = square_from_row_col(r, c)
-#                 # if sq in meta["config"]:
-#                 #     lbl = "white" if meta["config"][sq].endswith("_w") else "black"
-#                 if sq in config:
-#                     val = config[sq]
-#                     is_white = val.endswith("white") or str(val).isupper()
-#                     lbl = "white" if is_white else "black"
-#                 else:
-#                     lbl = "empty"
-#                 cv2.imwrite(str(dst / lbl / f"{img_path.stem}_{r}{c}.png"), cv2.cvtColor(crop, cv2.COLOR_RGB2BGR))
-
-#     with ThreadPool(workers) as pool:
-#         list(tqdm(pool.imap_unordered(process, imgs), total=len(imgs)))
-
-
 def preprocess_dataset(src: str | Path, dst: str | Path, workers: int = 6,
                        board_size: int = 800, square_size: int = 64):
     src, dst = Path(src), Path(dst)

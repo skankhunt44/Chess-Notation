@@ -18,7 +18,6 @@ from vision import find_board, warp_board, occupancy_cnn, draw_board_overlay, as
 from tracker import SquareTracker
 from stockfish import _analyze_moves_with_engine
 from training_pipeline import training_pipeline
-# from autolabel import learn_proto, auto_label
 
 import asyncio
 from dataclasses import asdict
@@ -114,72 +113,6 @@ async def calibrate(image_b64: str = Body(..., media_type="text/plain")):
 async def get_history():
     """Return the list of moves seen so far in SAN."""
     return {"moves": tracker.get_history()}
-
-
-# @app.post("/capture-empty")
-# async def capture_empty(image_b64: str = Body(..., media_type="text/plain")):
-#     if _corners is None:
-#         raise HTTPException(400, "Not calibrated")
-#     frame = _decode_image(image_b64)
-#     board_img, _ = warp_board(frame, _corners)
-#     STATE["empty"] = board_img
-#     sd = _ensure_session_dir()
-#     cv.imwrite(str(sd / "empty.png"), board_img)
-#     return {"ok": True}
-
-
-# @app.post("/teach-color/{which}")
-# async def teach_color(which: str, image_b64: str = Body(..., media_type="text/plain")):
-#     if STATE["empty"] is None:
-#         raise HTTPException(400, "Capture empty first")
-#     frame = _decode_image(image_b64)
-#     board_img, _ = warp_board(frame, _corners)
-#     feat = learn_proto(STATE["empty"], board_img).astype(np.float32)
-
-#     if which.lower() == "white":
-#         STATE["protoW"] = _ema(STATE["protoW"], feat, STATE["nW"], alpha=0.35)
-#         STATE["nW"] += 1
-#         return {"ok": True, "n_white": STATE["nW"]}
-#     else:
-#         STATE["protoB"] = _ema(STATE["protoB"], feat, STATE["nB"], alpha=0.35)
-#         STATE["nB"] += 1
-#         return {"ok": True, "n_black": STATE["nB"]}
-
-
-# @app.post("/propose-labels")
-# async def propose_labels(image_b64: str = Body(..., media_type="text/plain")):
-#     for k in ("empty", "protoW", "protoB"):
-#         if STATE[k] is None:
-#             raise HTTPException(400, f"Missing {k} – run the previous steps")
-#     frame = _decode_image(image_b64)
-#     board_img, _ = warp_board(frame, _corners)
-#     labels = auto_label(STATE["empty"], board_img, STATE["protoW"], STATE["protoB"])
-#     _, png = cv.imencode(".png", board_img)
-#     return {"labels": labels, "warp_png": base64.b64encode(png).decode()}
-
-
-# @app.post("/save-sample")
-# async def save_sample(payload: dict = Body(...)):
-#     labels = payload.get("labels")
-#     image_b64 = payload.get("image_b64")
-#     if not labels or not image_b64:
-#         raise HTTPException(400, "Need labels and image_b64")
-
-#     sd = _ensure_session_dir()
-#     samples_dir = sd / "samples"
-#     samples_dir.mkdir(parents=True, exist_ok=True)
-
-#     img = _decode_image(image_b64)  # browser sends 800x800 warp; do NOT re-warp
-#     next_idx = len(list(samples_dir.glob("img_*.png"))) + 1
-#     img_path = samples_dir / f"img_{next_idx:04d}.png"
-#     cv.imwrite(str(img_path), img)
-
-#     np.save(sd / "corners.npy", np.array(_corners, dtype=np.float32))  # keep latest
-
-#     (samples_dir / f"labels_{next_idx:04d}.json").write_text(
-#         json.dumps({"image": img_path.name, "grid_size": 8, "labels": labels}, indent=2)
-#     )
-#     return {"ok": True, "saved": str(img_path), "session": str(sd)}
 
 
 def _occ_to_labels(occ: np.ndarray) -> list[str]:
