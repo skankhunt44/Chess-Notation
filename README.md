@@ -65,7 +65,7 @@ Board State → Move Diff → FEN/PGN
 
 > Prereqs: Python 3.10+, `pip`, and Stockfish.  
 > macOS: `brew install stockfish`
-
+```bash
 # Clone
 git clone https://github.com/skankhunt44/Chess-Notation.git
 cd Chess-Notation
@@ -82,6 +82,7 @@ uvicorn app:app --reload     # or: python -m uvicorn main:app --reload
 
 # Optional: expose over the internet
 ngrok http 8000
+```
 
 ### First run
 1. Enable Camera and point at the whole board (White at bottom).
@@ -101,7 +102,7 @@ data/
 static/                    # Frontend (HTML/CSS/JS, chessboard.js)
 training_pipeline.py       # Preprocess + train orchestration
 app.py (or main.py)        # FastAPI app + routes / websockets
-'''text
+```
 
 ## 🧪 Training & Improving the Model
 
@@ -113,6 +114,7 @@ app.py (or main.py)        # FastAPI app + routes / websockets
 5. Tracker hot-loads the new model.
 
 ### CLI (example)
+```bash
 # Preprocess
 python training_pipeline.py --cmd preprocess \
   --data_dir data/crops_my_cam --out data/processed
@@ -121,16 +123,17 @@ python training_pipeline.py --cmd preprocess \
 python training_pipeline.py --cmd train \
   --epochs 10 --batch_size 64 --lr 3e-4 \
   --model_out assets/model.pt
+  ```
 
 > Validation split is grouped by board id to avoid leakage across crops.
 
 ## 🔌 API (selected)
 
-- POST /calibrate — base64 image → homography/corners.
-- POST /capture_label — persist one 64-square labelled sample (E/W/B).
-- POST /preprocess — convert samples to training-ready format.
-- POST /train — fine-tune CNN; stream logs to UI.
-- WS /stream — push live frames / board states.
+- `POST /calibrate` — base64 image → homography/corners.
+- `POST /capture_label` — persist one 64-square labelled sample (E/W/B).
+- `POST /preprocess` — convert samples to training-ready format.
+- `POST /train` — fine-tune CNN; stream logs to UI.
+- `WS /stream` — push live frames / board states.
 (Endpoint names may differ slightly—see the code/UI bindings.)
 
 ## ⚙️ Tips & Configuration
@@ -143,14 +146,11 @@ python training_pipeline.py --cmd train \
 
 ## 🧰 Troubleshooting
 
-- “Board not found”
-Make sure the whole board is visible; improve border contrast; recalibrate.
-- Blank calib_fail.jpg
-Guard against corners is None before drawing overlays.
-- Connection closed (1005) on mobile
-Reconnect WebSocket on visibilitychange; Safari sometimes drops idle connections.
-- Checkmate shows as “check”
-Verify final position flags before rendering result labels.
+- **“Board not found”** — ensure the whole board is visible; improve border contrast; recalibrate.  
+- **Blank `calib_fail.jpg`** — guard against `corners is None` before drawing overlays.  
+- **Connection closed (1005) on mobile** — reconnect WebSocket on `visibilitychange`; Safari sometimes drops idle connections.  
+- **Checkmate shows as “check”** — verify final position flags before rendering result labels.
+
 
 ## 📈 Roadmap
 
