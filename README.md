@@ -23,9 +23,6 @@ Use your **phone camera** to detect a real chessboard, classify every square (em
 
 ## 📸 Gallery
 
-> Place these files in `assets/readme/`:  
-> `board_corners.png`, `square_labels_grid.png`, `collect_training_data_mobile.png`, `label_ui.png`, `tracker_home.png`, `analysis_ui.png`
-
 | Corner & grid detection | Square classification | Data capture (mobile) |
 |---|---|---|
 | <img src="assets/readme/board_corners.png" alt="Board inner/outer frame detection" /> | <img src="assets/readme/square_labels_grid.png" alt="Square classifier visual grid" /> | <img src="assets/readme/collect_training_data_mobile.png" alt="Collect training data screen" /> |
@@ -39,21 +36,22 @@ Use your **phone camera** to detect a real chessboard, classify every square (em
 ## 🧠 How it Works
 
 Phone Camera (WebRTC)
-│
-▼
+        │
+        ▼
 Board Calibration → Perspective Warp (800×800)
-│
-▼
+        │
+        ▼
 Split into 64 Square Crops (N×N)
-│
-▼
+        │
+        ▼
 Tiny CNN → {empty, white, black} per square
-│
-▼
+        │
+        ▼
 Board State → Move Diff → FEN/PGN
-│
-├─▶ UI (live board, history)
-└─▶ Stockfish (evals, best lines)
+        │
+        ├─▶ UI (live board, history)
+        └─▶ Stockfish (evals, best lines)
+
 
 
 - **Vision**: OpenCV for corner finding & top-down warp.  
@@ -68,7 +66,6 @@ Board State → Move Diff → FEN/PGN
 > Prereqs: Python 3.10+, `pip`, and Stockfish.  
 > macOS: `brew install stockfish`
 
-```bash
 # Clone
 git clone https://github.com/skankhunt44/Chess-Notation.git
 cd Chess-Notation
@@ -83,9 +80,7 @@ pip install -r requirements.txt
 # Run server (adjust module name if different)
 uvicorn app:app --reload     # or: python -m uvicorn main:app --reload
 
-# Open http://localhost:8000
-
-# To make the server accessible from the internet (optional), run in another
+# Optional: expose over the internet
 ngrok http 8000
 
 ### First run
@@ -96,20 +91,21 @@ ngrok http 8000
 5. Collect Training Data to improve accuracy on your setup.
 
 ## 🏗️ Project Structure (simplified)
+```text
 chess_cnn/                 # CNN training / inference
 assets/
   model.pt                 # Latest trained model
-  ...
 data/
   session_*/               # Captured frames/crops per session
   crops_my_cam/            # User-labeled crops
 static/                    # Frontend (HTML/CSS/JS, chessboard.js)
 training_pipeline.py       # Preprocess + train orchestration
 app.py (or main.py)        # FastAPI app + routes / websockets
+'''
 
 ## 🧪 Training & Improving the Model
 
-###Train from the UI
+### Train from the UI
 1. Collect Training Data → Calibrate → Capture & Label.
 2. Click each square to cycle E → W → B, then Save Training Sample.
 3. Preprocess Data (builds training set).
