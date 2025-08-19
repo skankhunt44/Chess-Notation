@@ -17,6 +17,7 @@ from starlette.concurrency import run_in_threadpool
 from vision import find_board, warp_board, occupancy_cnn, draw_board_overlay, ascii_occ
 from tracker import SquareTracker
 from stockfish import _analyze_moves_with_engine
+from training_pipeline import training_pipeline
 # from autolabel import learn_proto, auto_label
 
 import asyncio
@@ -347,6 +348,79 @@ async def api_analyze(payload: dict = Body(default={})):
         raise HTTPException(500, f"Engine error: {e}")
 
     return JSONResponse(result)
+
+
+@app.post("/preprocess")
+async def api_preprocess():
+    """Preprocess training data from current session"""
+    return training_pipeline.preprocess_data()
+
+@app.post("/train")  
+async def api_train():
+    """Train the AI model with preprocessed data"""
+    return training_pipeline.train_model()
+
+@app.get("/training-status")
+async def api_training_status():
+    """Get training pipeline status"""
+    return training_pipeline.get_status()
+
+@app.post("/cleanup-crops")
+async def api_cleanup_crops():
+    """Clean up old preprocessed crops"""
+    return training_pipeline.cleanup_old_crops()
+
+# Update your existing save-sample endpoint to work with the new format
+@app.post("/save-sample")
+async def save_sample(payload: dict = Body(...)):
+    """Save a labeled training sample"""
+    try:
+        labels = payload.get("labels")
+        warp_png = payload.get("warp_png")  # Note: changed from image_b64
+        
+        if not labels or not warp_png:
+            raise HTTPException(400, "Need labels and warp_png")
+
+        sd = _ensure_session_dir()
+        samples_dir = sd / "samples"
+        samples_dir.mkdir(parents=True, exist_ok=True)
+
+        # Decode the base64 warp image
+        import base64
+        img_data = base64.b64decode(warp_png)
+        
+        # Save as PNG directly (since it's already a warped 800x800 image)
+        next_idx = len(list(samples_dir.glob("img_*.png"))) + 1
+        img_path = samples_dir / f"img_{next_idx:04d}.png"
+        
+        with open(img_path, 'wb') as f:
+            f.write(img_data)
+
+        # Save corners for this session (keep latest)
+        if _corners is not None:
+            np.save(sd / "corners.npy", np.array(_corners, dtype=np.float32))
+
+        # Save labels in the new format
+        labels_path = samples_dir / f"labels_{next_idx:04d}.json"
+        labels_data = {
+            "image": img_path.name,
+            "grid_size": 8,
+            "labels": labels
+        }
+        
+        with open(labels_path, 'w') as f:
+            json.dump(labels_data, f, indent=2)
+        
+        return {
+            "ok": True, 
+            "saved": str(img_path), 
+            "session": str(sd),
+            "message": f"Sample {next_idx} saved successfully"
+        }
+        
+    except Exception as e:
+        print(f"Save sample error: {e}")
+        raise HTTPException(500, f"Failed to save sample: {str(e)}")
 
 
 # --------------------------------------------------------------------------------------

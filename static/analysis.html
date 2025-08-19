@@ -14,31 +14,19 @@
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
 
     :root{
-      --primary: #6366f1;
-      --primary-dark: #4f46e5;
-      --secondary: #8b5cf6;
-      --accent: #06b6d4;
-      --success: #10b981;
-      --warning: #f59e0b;
-      --danger: #ef4444;
-
-      --glass: rgba(255, 255, 255, 0.08);
-      --glass-border: rgba(255, 255, 255, 0.12);
-
-      --text: #fff;
-      --muted: rgba(255,255,255,.7);
-
-      --board-size: min(86vw, 420px);
-      --card-radius: 20px;
+      --primary:#6366f1; --primary-dark:#4f46e5; --secondary:#8b5cf6; --accent:#06b6d4;
+      --glass:rgba(255,255,255,.08); --glass-border:rgba(255,255,255,.12);
+      --text:#fff; --muted:rgba(255,255,255,.7);
+      --board-size:min(86vw, 420px);
+      --card-radius:20px;
     }
-
-    *{ box-sizing: border-box; margin: 0; padding: 0; }
+    *{box-sizing:border-box;margin:0;padding:0}
     body{
-      font-family: 'Inter', -apple-system, system-ui, sans-serif;
-      background: linear-gradient(135deg, #0f0f23 0%, #1a1a2e 25%, #16213e 50%, #0f3460 100%);
-      min-height: 100vh; color: var(--text); overflow-x: hidden;
-      -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale;
-      padding-bottom: env(safe-area-inset-bottom);
+      font-family:'Inter',system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;
+      background:linear-gradient(135deg,#0f0f23 0%,#1a1a2e 25%,#16213e 50%,#0f3460 100%);
+      color:var(--text); min-height:100vh; overflow-x:hidden;
+      -webkit-font-smoothing:antialiased; -moz-osx-font-smoothing:grayscale;
+      padding-bottom:env(safe-area-inset-bottom);
     }
     body::before{
       content:''; position:fixed; inset:0; pointer-events:none; z-index:0;
@@ -49,142 +37,125 @@
     }
 
     .container{
-      position: relative; z-index:1;
-      max-width: 1100px; margin: 0 auto; padding: calc(18px + env(safe-area-inset-top)) 16px 20px;
-      display: grid; gap: 16px;
-      grid-template-columns: 1fr;
+      position:relative; z-index:1;
+      max-width:1100px; margin:0 auto; padding:calc(18px + env(safe-area-inset-top)) 16px 20px;
+      display:grid; gap:16px; grid-template-columns:1fr;
     }
-    @media (min-width: 980px){
-      .container{ grid-template-columns: minmax(320px, 520px) 1fr; align-items: start; }
-      :root{ --board-size: 440px; }
+    @media (min-width:980px){
+      .container{ grid-template-columns:minmax(320px,520px) 1fr; align-items:start; }
+      :root{ --board-size:440px; }
     }
 
-    .header{ text-align:center; margin-bottom: 2px; }
+    .header{text-align:center}
     .title{
-      font-size: 30px; font-weight: 800; letter-spacing: -0.02em; margin-bottom: 6px;
-      background: linear-gradient(135deg, #ffffff 0%, #a8a8a8 100%);
-      -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+      font-size:30px; font-weight:800; letter-spacing:-.02em; margin-bottom:6px;
+      background:linear-gradient(135deg,#fff 0%,#a8a8a8 100%);
+      -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text;
     }
-    .subtitle{ color: var(--muted); font-size: 14px; }
+    .subtitle{ color:var(--muted); font-size:14px; }
 
     .card{
-      background: var(--glass); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
-      border: 1px solid var(--glass-border); border-radius: var(--card-radius); overflow: hidden;
+      background:var(--glass); border:1px solid var(--glass-border);
+      border-radius:var(--card-radius); backdrop-filter:blur(20px); -webkit-backdrop-filter:blur(20px);
     }
-    .section{ padding: 18px; }
+    .section{ padding:18px; }
 
-    /* Buttons */
+    /* Back button like sample.html */
+    .back-nav{ position:fixed; top:20px; left:20px; z-index:10; }
+    .back-btn{
+      background:var(--glass); border:1px solid var(--glass-border);
+      border-radius:12px; color:#fff; padding:8px 12px; font-weight:600; cursor:pointer;
+      -webkit-backdrop-filter:blur(10px); backdrop-filter:blur(10px); display:inline-flex; gap:6px;
+      transition:all .2s cubic-bezier(.4,0,.2,1);
+    }
+    .back-btn:hover{ transform:translateY(-1px); }
+
     .btn{
-      background: var(--glass); border: 1px solid var(--glass-border); border-radius: 12px;
-      padding: 12px 16px; font: inherit; font-weight: 600; color: #fff; cursor: pointer;
-      transition: all .2s cubic-bezier(.4,0,.2,1); display:inline-flex; align-items:center; gap:8px;
-      -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
+      background:var(--glass); border:1px solid var(--glass-border); border-radius:12px;
+      padding:12px 16px; color:#fff; font-weight:600; cursor:pointer;
+      display:inline-flex; align-items:center; gap:8px; transition:.2s;
     }
-    .btn:hover{ transform: translateY(-1px); background: rgba(255,255,255,.12); border-color: rgba(255,255,255,.18); }
-    .btn:active{ transform: translateY(0); }
-    .btn:disabled{ opacity:.45; cursor:not-allowed; transform:none; }
-    .btn-primary{ background: linear-gradient(135deg, var(--primary), var(--primary-dark)); border: none; box-shadow: 0 6px 20px rgba(99,102,241,.35); }
-    .btn-success{ background: linear-gradient(135deg, var(--success), #059669); border: none; box-shadow: 0 6px 20px rgba(16,185,129,.3); }
-    .btn-warning{ background: linear-gradient(135deg, var(--warning), #d97706); border: none; box-shadow: 0 6px 20px rgba(245,158,11,.3); }
-
-    .btn-group{ display:flex; flex-wrap: wrap; gap:10px; justify-content:center; }
+    .btn:hover{ transform:translateY(-1px); background:rgba(255,255,255,.12) }
+    .btn:disabled{ opacity:.45; cursor:not-allowed }
+    .btn-primary{ background:linear-gradient(135deg,var(--primary),var(--primary-dark)); border:none; }
+    .btn-group{ display:flex; flex-wrap:wrap; gap:10px; justify-content:center; }
 
     .pill{
-      display:inline-flex; align-items:center; gap:8px; padding: 8px 12px; border-radius: 999px;
-      border:1px solid var(--glass-border); background: rgba(255,255,255,.10); font-size: 13px; font-weight: 600;
+      display:inline-flex; align-items:center; gap:8px; padding:8px 12px; border-radius:999px;
+      border:1px solid var(--glass-border); background:rgba(255,255,255,.10); font-size:13px; font-weight:600;
     }
+    .meta{ color:var(--muted); font-size:12px; }
 
-    /* Back button (like sample.html) */
-    .back-nav{ position: fixed; top: 20px; left: 20px; z-index: 10; }
-    .back-btn{
-      background: var(--glass); border:1px solid var(--glass-border); border-radius:12px; color:#fff;
-      padding: 8px 12px; font-size: 14px; font-weight: 600; cursor: pointer;
-      -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
-      display:inline-flex; align-items:center; gap:6px;
-      transition: all .2s cubic-bezier(.4,0,.2,1);
+    /* Board + overlay + eval bar */
+    .board-row{ display:flex; gap:14px; align-items:stretch; justify-content:center; }
+    .board-shell{
+      width:var(--board-size); position:relative; border-radius:18px; overflow:hidden;
+      box-shadow:0 20px 40px rgba(0,0,0,.25), 0 0 0 1px rgba(255,255,255,.08);
     }
-    .back-btn:hover{ transform: translateY(-1px); background: rgba(255,255,255,.12); border-color: rgba(255,255,255,.18); }
+    #board{ width:100%; background:transparent; } /* chessboard.js sets height */
+    #board > div{ border-radius:18px; } /* clip inner corners */
+    #overlay{ position:absolute; inset:0; pointer-events:none; } /* arrow canvas */
 
-    /* Board + Eval bar */
-    .board-row{ display:flex; gap:14px; align-items: stretch; justify-content:center; }
-    #board{
-      width: var(--board-size); height: var(--board-size); margin: 0 auto; border-radius: 18px; overflow: hidden; background: #fff;
-      box-shadow: 0 20px 40px rgba(0,0,0,.25), 0 0 0 1px rgba(255,255,255,.08);
-    }
     .evalbar{
-      position: relative; width: 22px; border-radius: 12px; overflow: hidden;
-      border: 1px solid var(--glass-border); background: #111; flex: 0 0 22px;
-      box-shadow: inset 0 0 0 1px rgba(255,255,255,.05);
+      position:relative; width:22px; flex:0 0 22px; border-radius:12px; overflow:hidden;
+      border:1px solid var(--glass-border); background:#111; box-shadow:inset 0 0 0 1px rgba(255,255,255,.05);
     }
-    .eval-white, .eval-black{
-      position:absolute; left:0; right:0; transition: height .25s ease;
-    }
-    .eval-white{ top:0; height:50%; background: #fff; }
-    .eval-black{ bottom:0; height:50%; background: #000; }
-    .eval-notch{
-      position:absolute; left:-6px; right:-6px; height:2px; background: rgba(255,255,255,.6);
-      box-shadow: 0 0 8px rgba(0,0,0,.4); transition: bottom .25s ease;
-    }
+    /* Black on top, White at bottom */
+    .eval-white{ position:absolute; bottom:0; left:0; right:0; height:50%; background:#fff; transition:height .25s ease; }
+    .eval-black{ position:absolute; top:0;    left:0; right:0; height:50%; background:#000; transition:height .25s ease; }
+    .eval-notch{ position:absolute; left:-6px; right:-6px; height:2px; background:rgba(255,255,255,.6); transition:bottom .25s ease; }
     .eval-label{
-      position:absolute; right: 28px; transform: translateY(50%);
-      padding: 4px 8px; font-size: 12px; font-weight:700; border-radius: 8px;
-      background: rgba(255,255,255,.12); border:1px solid var(--glass-border);
-      backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
-      white-space: nowrap;
+      position:absolute; right:28px; transform:translateY(50%);
+      padding:4px 8px; font-size:12px; font-weight:700; border-radius:8px;
+      background:rgba(255,255,255,.12); border:1px solid var(--glass-border);
+      -webkit-backdrop-filter:blur(10px); backdrop-filter:blur(10px);
+      white-space:nowrap;
     }
 
-    /* Moves table */
-    .table-wrap{ overflow:auto; -webkit-overflow-scrolling: touch; }
-    table{ width:100%; border-collapse: collapse; font-size: 14px; }
-    th, td{ padding: 10px 10px; border-bottom: 1px solid var(--glass-border); }
-    thead th{ position: sticky; top: 0; background: rgba(0,0,0,.18); backdrop-filter: blur(6px); }
+    .table-wrap{ overflow:auto; -webkit-overflow-scrolling:touch; }
+    table{ width:100%; border-collapse:collapse; font-size:14px; }
+    th,td{ padding:10px 10px; border-bottom:1px solid var(--glass-border); }
+    thead th{ position:sticky; top:0; background:rgba(0,0,0,.18); backdrop-filter:blur(6px); }
     tr{ cursor:pointer; }
-    tr:hover{ background: rgba(255,255,255,.08); }
-
-    .tag{ font-size: 12px; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--glass-border); display:inline-block; }
+    tr:hover{ background:rgba(255,255,255,.08); }
+    .tag{ font-size:12px; padding:2px 8px; border-radius:999px; border:1px solid var(--glass-border); display:inline-block; }
     .best{ background:#dcfce7; color:#166534; border-color:#86efac; font-weight:700; }
     .good{ background:#ecfeff; color:#155e75; border-color:#a5f3fc; }
     .inaccuracy{ background:#fff7ed; color:#9a3412; border-color:#fed7aa; }
     .mistake{ background:#fef2f2; color:#991b1b; border-color:#fecaca; }
     .blunder{ background:#fee2e2; color:#7f1d1d; border-color:#fca5a5; font-weight:800; }
 
-    /* Micro helpers */
-    .meta{ color: var(--muted); font-size: 12px; }
-    .loading{ position:relative; overflow:hidden; }
-    .loading::after{
-      content:''; position:absolute; inset:0; left:-100%;
-      background: linear-gradient(90deg, transparent, rgba(255,255,255,.18), transparent);
-      animation: shimmer 1.6s infinite;
-    }
-    @keyframes shimmer{ 0%{ left:-100%; } 100%{ left:100%; } }
-
-    @media (max-width: 560px){
+    @media (max-width:560px){
       th.hide-sm, td.hide-sm{ display:none; }
     }
   </style>
 </head>
 <body>
-  <!-- Back button -->
+  <!-- Back like sample.html -->
   <div class="back-nav">
     <button class="back-btn" onclick="history.back()">← Back</button>
   </div>
 
   <div class="container">
-    <div class="header" style="grid-column: 1 / -1;">
+    <div class="header" style="grid-column:1 / -1;">
       <h1 class="title">Game Analysis</h1>
       <p class="subtitle">Step through moves, see engine evals, and review mistakes</p>
     </div>
 
-    <!-- Left column: board + controls -->
+    <!-- Left column -->
     <div class="card">
       <div class="section">
         <div class="board-row">
-          <div id="board"></div>
+          <!-- Board + overlay -->
+          <div class="board-shell" id="boardShell">
+            <div id="board"></div>
+            <canvas id="overlay"></canvas>
+          </div>
 
-          <!-- Eval bar -->
-          <div class="evalbar" aria-label="Engine evaluation bar (White at top, Black at bottom)">
-            <div class="eval-white" id="evalWhite"></div>
+          <!-- Eval bar (BLACK top / WHITE bottom) -->
+          <div class="evalbar" aria-label="Engine evaluation bar (Black at top, White at bottom)">
             <div class="eval-black" id="evalBlack"></div>
+            <div class="eval-white" id="evalWhite"></div>
             <div class="eval-notch" id="evalNotch" style="bottom:50%"></div>
             <div class="eval-label" id="evalBubble" style="bottom:50%">—</div>
           </div>
@@ -251,10 +222,12 @@
       const MAX_PAWN = 6; // clamp for eval bar scaling (±6 pawns)
       const board = Chessboard('board', {
         position   : 'start',
+        orientation: 'white',  // board stays white-at-bottom
         draggable  : false,
         pieceTheme : '/chessboardjs-1.0.0/img/chesspieces/wikipedia/{piece}.png'
       });
 
+      // --- Elements ---
       const statusEl    = document.getElementById('status');
       const summaryPill = document.getElementById('summaryPill');
       const resultPill  = document.getElementById('resultPill');
@@ -280,6 +253,11 @@
       const btnNext  = document.getElementById('btnNext');
       const btnEnd   = document.getElementById('btnEnd');
 
+      // Overlay canvas for best-move arrow
+      const overlay = document.getElementById('overlay');
+      const boardShell = document.getElementById('boardShell');
+
+      // --- State ---
       let analysis = null;
       let positions = [];
       let cur = 0;
@@ -287,6 +265,52 @@
 
       function setButtons(on){ [btnStart,btnPrev,btnNext,btnEnd,btnPlay].forEach(b=> b.disabled = !on); }
 
+      // ------ Arrow overlay helpers ------
+      function syncOverlaySize(){
+        const rect = boardShell.getBoundingClientRect();
+        overlay.width  = Math.round(rect.width);
+        overlay.height = Math.round(rect.height);
+      }
+      function squareCenter(sq){
+        // Get DOM square and compute center relative to overlay
+        const el = document.querySelector(`#board .square-${sq}`);
+        if (!el) return null;
+        const a = el.getBoundingClientRect();
+        const b = overlay.getBoundingClientRect();
+        return { x: a.left - b.left + a.width/2, y: a.top - b.top + a.height/2 };
+      }
+      function drawArrow(fromSq, toSq){
+        const ctx = overlay.getContext('2d');
+        ctx.clearRect(0,0,overlay.width,overlay.height);
+        const A = squareCenter(fromSq), B = squareCenter(toSq);
+        if (!A || !B) return;
+
+        // Shaft
+        ctx.lineWidth = Math.max(4, overlay.width * 0.01);
+        ctx.lineCap = 'round';
+        ctx.strokeStyle = 'rgba(99,102,241,0.95)'; // primary
+        ctx.beginPath(); ctx.moveTo(A.x, A.y); ctx.lineTo(B.x, B.y); ctx.stroke();
+
+        // Arrow head
+        const headLen = Math.max(12, overlay.width * 0.035);
+        const ang = Math.atan2(B.y - A.y, B.x - A.x);
+        ctx.beginPath();
+        ctx.moveTo(B.x, B.y);
+        ctx.lineTo(B.x - headLen * Math.cos(ang - Math.PI/6), B.y - headLen * Math.sin(ang - Math.PI/6));
+        ctx.moveTo(B.x, B.y);
+        ctx.lineTo(B.x - headLen * Math.cos(ang + Math.PI/6), B.y - headLen * Math.sin(ang + Math.PI/6));
+        ctx.stroke();
+      }
+      function clearArrow(){
+        const ctx = overlay.getContext('2d');
+        ctx.clearRect(0,0,overlay.width,overlay.height);
+      }
+      window.addEventListener('resize', ()=>{ syncOverlaySize(); // keep arrow crisp
+        // redraw current best arrow after resize
+        if (analysis) drawBestArrowForIndex(cur);
+      });
+
+      // ------ Highlight helpers ------
       function clearHighlights(){
         document.querySelectorAll('#board [class*=square-]').forEach(el=>{
           el.style.outline = ''; el.style.boxShadow='';
@@ -301,22 +325,29 @@
 
       function highlightForIndex(i){
         clearHighlights();
+        // previous actual move (orange)
         if (i > 0) {
           const gPrev = new Chess(positions[i-1]);
           const san   = analysis.moves[i-1].move;
           const mv    = gPrev.move(san, {sloppy:true});
           if (mv) { mark(getSquareEl(mv.from),'rgba(245,158,11,.92)'); mark(getSquareEl(mv.to),'rgba(245,158,11,.92)'); }
         }
-        if (i < analysis.moves.length) {
-          const bestSan = analysis.moves[i].best;
-          if (bestSan) {
-            const gNow = new Chess(positions[i]);
-            const mv2  = gNow.move(bestSan, {sloppy:true});
-            if (mv2) { mark(getSquareEl(mv2.from),'rgba(99,102,241,.92)'); mark(getSquareEl(mv2.to),'rgba(99,102,241,.92)'); }
-          }
+      }
+
+      function drawBestArrowForIndex(i){
+        clearArrow();
+        if (i >= analysis.moves.length) return;
+        const bestSan = analysis.moves[i].best;
+        if (!bestSan) return;
+        const gNow = new Chess(positions[i]);
+        const mv2  = gNow.move(bestSan, {sloppy:true});
+        if (mv2){
+          syncOverlaySize();
+          drawArrow(mv2.from, mv2.to);
         }
       }
 
+      // ------ Info + eval bar ------
       function showInfoForIndex(i){
         posLabel.textContent = `${i} / ${analysis.moves.length}`;
         const g = new Chess(positions[i]);
@@ -342,18 +373,16 @@
           return signWhite * (MAX_PAWN * 2); // push to extremes
         }
         if (r.eval_after == null) return null;
-        let cp = r.eval_after;                 // cp in pawns for mover
+        let cp = r.eval_after;                 // pawns for mover
         if (r.side === 'Black') cp = -cp;      // convert to White POV
         return cp;
       }
-
       function evalToPct(cpWhite){
-        // Map cp in pawns to 0..100% (top=White advantage)
+        // 0..100% where 0 = all Black (top), 100 = all White (bottom)
         if (cpWhite === null) return 50;
         const x = Math.max(-MAX_PAWN, Math.min(MAX_PAWN, cpWhite));
         return (x + MAX_PAWN) / (2 * MAX_PAWN) * 100;
       }
-
       function formatEvalBubble(r){
         if (!r) return '—';
         if (r.mate_after !== null){
@@ -365,39 +394,38 @@
         if (r.side === 'Black') cp = -cp;
         return (cp >= 0 ? `+${cp.toFixed(2)}` : cp.toFixed(2));
       }
-
       function updateEvalBarForIndex(i){
-        const r = (i > 0) ? analysis.moves[i-1] : null; // show eval after the move that led to this position
+        const r = (i > 0) ? analysis.moves[i-1] : null; // eval AFTER previous move
         const cpW = whiteEvalFromResult(r);
-        const pct = evalToPct(cpW);
+        const pct = evalToPct(cpW);          // White share toward the bottom
         evalWhite.style.height = `${pct}%`;
         evalBlack.style.height = `${100 - pct}%`;
-        evalNotch.style.bottom = `${100 - pct}%`;
-        evalBubble.style.bottom = `${100 - pct}%`;
+        evalNotch.style.bottom = `${pct}%`;
+        evalBubble.style.bottom = `${pct}%`;
         evalBubble.textContent = formatEvalBubble(r);
       }
 
+      // ------ Navigation ------
       function gotoIndex(i){
         i = Math.max(0, Math.min(i, positions.length - 1));
         cur = i;
         board.position(positions[i], true);
         highlightForIndex(i);
+        drawBestArrowForIndex(i);
         showInfoForIndex(i);
         updateEvalBarForIndex(i);
 
+        // Row highlight only (no auto-scroll)
         tBody.querySelectorAll('tr').forEach(tr => tr.style.background = '');
         if (i > 0) {
           const tr = document.getElementById(`row-${i-1}`);
           tr && (tr.style.background = 'rgba(124,154,255,.12)');
-          tr && tr.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
         }
       }
-
       function next(){ gotoIndex(cur + 1); }
       function prev(){ gotoIndex(cur - 1); }
       function start(){ gotoIndex(0); }
       function end(){ gotoIndex(positions.length - 1); }
-
       function togglePlay(){
         if (timer) { clearInterval(timer); timer = null; btnPlay.textContent = '▶︎ Play'; return; }
         btnPlay.textContent = '⏸ Pause';
@@ -420,6 +448,7 @@
         if (e.code === 'Space')      { togglePlay(); e.preventDefault(); }
       });
 
+      // ------ Fetch analysis ------
       async function analyze(){
         setButtons(false);
         statusEl.textContent = 'Analyzing…';
@@ -432,7 +461,7 @@
           if (!res.ok) throw new Error(await res.text());
           analysis = await res.json();
 
-          // build positions array
+          // Build positions array
           const g = new Chess();
           positions = [g.fen()];
           (analysis.moves || []).forEach(r => {
@@ -456,7 +485,7 @@
           downloadPGN.style.display = '';
           downloadPGN.href = URL.createObjectURL(new Blob([analysis.pgn || ''], {type:'text/plain'}));
 
-          // Populate table
+          // Moves table
           tBody.innerHTML = '';
           (analysis.moves || []).forEach((r, idx)=>{
             const tr = document.createElement('tr');
@@ -487,6 +516,7 @@
 
           statusEl.textContent = 'Done. Tap any row to jump.';
           setButtons(true);
+          syncOverlaySize();
           gotoIndex(0);
         }catch(e){
           statusEl.textContent = `Analysis failed: ${e.message}`;
