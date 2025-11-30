@@ -2,9 +2,6 @@
 
 Track over-the-board moves from the standard start position and review them with Stockfish.
 
-> **Note**: This is a live **board tracker & analysis tool**, not an official “scorekeeper.” It infers positions and moves from vision; use PGN export at your discretion.
-> **Assumption**: Tracking begins from the standard starting position. Mid-game resync and arbitrary position reconstruction aren’t supported yet; if tracking is lost, start a new game.
-
 
 <p align="center">
   <img src="assets/readme/tracker_home.png" width="72%" alt="Live tracker home screen"/>
